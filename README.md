@@ -23,9 +23,9 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
   Because static-PIE executables do not contain an ELF interpreter (`.interp`) but have ELF type `ET_DYN`, standard `autoPatchelfHook` treats them as shared libraries. It alters their program headers, inserts a broken `PT_DYNAMIC` segment, and invalidates memory segment offsets. This causes immediate **SIGSEGV (exit code 139)** whenever the Electron app invokes `codex` or `node_repl`, manifesting as the **"Organization Settings"** startup crash or silent crashes during file editing.
 - **Solution**: The derivation caches the uncorrupted static-PIE binaries during `installPhase` and registers a hook into `postFixupHooks` via `preFixup`. This hook executes strictly *after* `autoPatchelfPostFixup`, restoring the original, untouched static binaries. The derivation also runs an `installCheckPhase` during build time to guarantee `codex`, `rg`, `tectonic`, `node`, and `node_repl` execute cleanly without crashes.
 
-### 2. File Chooser & GSettings Schema Safety
-- **Problem**: Opening a directory or workspace folder prompts GTK's native file chooser dialog. On standalone Wayland compositors (Niri, Hyprland, Sway), missing GSettings schema directories in `XDG_DATA_DIRS` causes GLib to abort (`GLib-GIO-ERROR: No GSettings schemas are installed on the system`).
-- **Solution**: Injects `gsettings-desktop-schemas` and `gtk3` schemas directly into `XDG_DATA_DIRS`, ensuring file and folder selection dialogs open reliably without crashing.
+### 2. File Chooser, Broken Qt Shims & GSettings Schema Safety
+- **Problem**: Opening a directory or workspace folder prompts GTK/Chromium's file chooser dialog. Chromium attempts to load `libqt5_shim.so` or `libqt6_shim.so` when present, which fail or segfault due to missing Qt libraries on NixOS. Furthermore, on standalone Wayland compositors (Niri, Hyprland, Sway), missing GSettings schemas cause GLib to abort (`GLib-GIO-ERROR: No GSettings schemas are installed on the system`).
+- **Solution**: The derivation completely removes `libqt5_shim.so` and `libqt6_shim.so` in `installPhase`, forces native portal dialogs via `--set-default GTK_USE_PORTAL 1`, and injects `gsettings-desktop-schemas` and `gtk3` schemas directly into `XDG_DATA_DIRS`, ensuring file and folder selection dialogs open reliably without crashing.
 
 ### 3. Workspace Git & File Management Integration
 - **Problem**: When attaching local folders or projects to ChatGPT/Codex, the backend relies on `git` and `diff` to discover repository structure, track modifications, and compute unified diffs.
@@ -51,6 +51,10 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 - **Problem**: The ChatGPT binary `dlopen`s `libpipewire-0.3.so.0` at runtime for WebRTC audio/video capture. On NixOS, libraries not in the binary's RPATH are invisible to `dlopen`, causing "Unable to open PipeWire library" errors and breaking voice input, screen sharing, and real-time audio features.
 - **Solution**: `pipewire` is injected into `runtimeDependencies`, ensuring its library path is included in the binary's RPATH. Combined with `libpulseaudio` (also a runtime dependency), both PulseAudio and PipeWire audio backends are available for microphone input and speaker output.
 
+### 9. Codex MCP Configuration Auto-Migration
+- **Problem**: On initial startup, Codex generates `~/.codex/config.toml` containing hardcoded absolute store paths to `node_repl`, `codex`, and Node runtime modules (e.g. `command = "/nix/store/...-chatgpt-desktop-.../lib/chatgpt/resources/cua_node/bin/node_repl"`). Whenever the package is rebuilt, updated, or garbage-collected, `config.toml` continues pointing to the old (potentially deleted or broken) Nix store path, causing child process `SIGSEGV` or execution failures when opening workspaces or running Code Mode.
+- **Solution**: The application launcher wrapper automatically detects if `~/.codex/config.toml` exists and rewrites any legacy `/nix/store/*-chatgpt-desktop-*` paths to match the active package store path (`$out`) before the process begins.
+
 ---
 
 ## Feature Matrix
@@ -60,7 +64,8 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 | **Core Desktop Chat** | **Supported** | Full Electron runtime parity with the official `.deb` release. |
 | **Codex Daemon (`app-server`)** | **Supported** | Pristine static-PIE execution; avoids patchelf memory layout corruption. |
 | **Code Mode REPL (`node_repl`)** | **Supported** | Bundled MCP stdio server preserved intact for code execution and file editing. |
-| **Folder & File Pickers** | **Supported** | Hardened with `gsettings-desktop-schemas` and `gtk3` in `XDG_DATA_DIRS`. |
+| **Folder & File Pickers** | **Supported** | Broken Qt shims removed; `GTK_USE_PORTAL=1` enforced; GSettings schemas in `XDG_DATA_DIRS`. |
+| **Config Store Path Auto-Migration** | **Supported** | Launcher auto-migrates `~/.codex/config.toml` Nix store paths across package updates. |
 | **Workspace Git Integration** | **Supported** | `git` and `diffutils` bundled in runtime `PATH` for project tracking. |
 | **LaTeX Compilation (`tectonic`)** | **Supported** | Bundled static Tectonic compiler verified and functional. |
 | **Native Wayland & DMA-BUF** | **Supported** | Configured with `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer`. |

@@ -10,6 +10,7 @@
   cacert,
   diffutils,
   git,
+  gnused,
   gsettings-desktop-schemas,
   libglvnd,
   xdg-utils,
@@ -106,12 +107,6 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   autoPatchelfIgnoreMissingDeps = [
-    "libQt5Core.so.5"
-    "libQt5Gui.so.5"
-    "libQt5Widgets.so.5"
-    "libQt6Core.so.6"
-    "libQt6Gui.so.6"
-    "libQt6Widgets.so.6"
     "libc.musl-x86_64.so.1"
   ];
 
@@ -128,6 +123,9 @@ stdenv.mkDerivation (finalAttrs: {
 
     # Move application files
     cp -r usr/lib/chatgpt/* $out/lib/chatgpt/
+
+    # Eliminate broken and unused Qt shims completely so Electron never attempts to dlopen them
+    rm -f $out/lib/chatgpt/libqt5_shim.so $out/lib/chatgpt/libqt6_shim.so
 
     # Backup uncorrupted static-pie binaries before autoPatchelf alters them
     mkdir -p "$TMPDIR/static-binaries"
@@ -160,7 +158,11 @@ stdenv.mkDerivation (finalAttrs: {
       --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}"
       --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
       --set NIX_SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
+      --set-default GTK_USE_PORTAL 1
+      --set-default CODEX_CLI_PATH "$out/lib/chatgpt/resources/codex"
+      --set-default CODEX_ELECTRON_RESOURCES_PATH "$out/lib/chatgpt/resources"
       --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
+      --run 'if [ -f "$HOME/.codex/config.toml" ] && [ -w "$HOME/.codex/config.toml" ]; then ${gnused}/bin/sed -i -E "s|/nix/store/[a-z0-9]+-chatgpt-desktop-[^/]+|'"$out"'|g" "$HOME/.codex/config.toml"; fi'
     )
 
     # autoPatchelfHook runs in postFixupHooks and corrupts static-pie binaries.
