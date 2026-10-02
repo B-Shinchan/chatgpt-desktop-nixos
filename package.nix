@@ -33,6 +33,7 @@
   nspr,
   nss,
   pango,
+  pipewire,
   systemd,
   libx11,
   libxcomposite,
@@ -101,6 +102,7 @@ stdenv.mkDerivation (finalAttrs: {
     libnotify
     libpulseaudio
     libglvnd
+    pipewire
   ];
 
   autoPatchelfIgnoreMissingDeps = [
@@ -158,7 +160,7 @@ stdenv.mkDerivation (finalAttrs: {
       --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}"
       --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
       --set NIX_SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
-      --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations --password-store=gnome-libsecret"
+      --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
     )
 
     # autoPatchelfHook runs in postFixupHooks and corrupts static-pie binaries.

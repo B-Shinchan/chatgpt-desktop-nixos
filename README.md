@@ -43,9 +43,13 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 - **Problem**: The bundled `codex` agent server and Electron background services communicate with OpenAI authentication endpoints (`auth.openai.com`) and WebSockets (`chatgpt.com`). On NixOS, standard `/etc/ssl/certs` paths may not exist if not explicitly configured.
 - **Solution**: The wrapper explicitly injects `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE` pointing to `cacert` (`/etc/ssl/certs/ca-bundle.crt`).
 
-### 7. Native Wayland & Hardware Acceleration
-- **Problem**: Default Electron flags launch under XWayland with blurred window scaling and lack of client-side decorations.
-- **Solution**: Pre-configured flags `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations` ensure crisp native Wayland surfaces, and `addDriverRunpath` injects dynamic OpenGL/Vulkan driver paths (`libglvnd`, `mesa`).
+### 7. Native Wayland, Hardware Acceleration & Screen Capture
+- **Problem**: Default Electron flags launch under XWayland with blurred window scaling and lack of client-side decorations. Screen sharing via WebRTC requires explicit PipeWire integration on Wayland compositors.
+- **Solution**: Pre-configured flags `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer` ensure crisp native Wayland surfaces and enable screen capture through the XDG Desktop Portal/PipeWire pipeline. `addDriverRunpath` injects dynamic OpenGL/Vulkan driver paths (`libglvnd`, `mesa`).
+
+### 8. Audio & PipeWire Runtime Integration
+- **Problem**: The ChatGPT binary `dlopen`s `libpipewire-0.3.so.0` at runtime for WebRTC audio/video capture. On NixOS, libraries not in the binary's RPATH are invisible to `dlopen`, causing "Unable to open PipeWire library" errors and breaking voice input, screen sharing, and real-time audio features.
+- **Solution**: `pipewire` is injected into `runtimeDependencies`, ensuring its library path is included in the binary's RPATH. Combined with `libpulseaudio` (also a runtime dependency), both PulseAudio and PipeWire audio backends are available for microphone input and speaker output.
 
 ---
 
@@ -59,7 +63,9 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 | **Folder & File Pickers** | **Supported** | Hardened with `gsettings-desktop-schemas` and `gtk3` in `XDG_DATA_DIRS`. |
 | **Workspace Git Integration** | **Supported** | `git` and `diffutils` bundled in runtime `PATH` for project tracking. |
 | **LaTeX Compilation (`tectonic`)** | **Supported** | Bundled static Tectonic compiler verified and functional. |
-| **Native Wayland & DMA-BUF** | **Supported** | Configured with `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations`. |
+| **Native Wayland & DMA-BUF** | **Supported** | Configured with `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer`. |
+| **Screen Sharing (WebRTC)** | **Supported** | PipeWire capturer enabled; `libpipewire-0.3.so.0` injected via `runtimeDependencies`; XDG Desktop Portal integration. |
+| **Voice / Microphone Input** | **Supported** | `libpulseaudio` and `pipewire` in runtime RPATH for PulseAudio/PipeWire audio backend discovery. |
 | **OAuth `chatgpt://` Callbacks** | **Supported** | Registered via desktop integration; `xdg-utils` injected into runtime `PATH`. |
 | **Secret Storage Persistence** | **Supported** | FreeDesktop Secret Service integration via `--password-store=gnome-libsecret`. |
 | **Browser Security (No Hijack)** | **Supported** | Stripped rogue `http`/`https` scheme handlers; default web browser remains intact. |
