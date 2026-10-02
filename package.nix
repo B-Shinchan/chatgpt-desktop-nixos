@@ -7,12 +7,14 @@
   wrapGAppsHook3,
   makeWrapper,
   addDriverRunpath,
+  bubblewrap,
   cacert,
   diffutils,
   git,
   gnused,
   gsettings-desktop-schemas,
   libglvnd,
+  python3,
   xdg-utils,
   alsa-lib,
   at-spi2-atk,
@@ -61,12 +63,14 @@ stdenv.mkDerivation (finalAttrs: {
     wrapGAppsHook3
     makeWrapper
     addDriverRunpath
+    python3
   ];
 
   buildInputs = [
     alsa-lib
     at-spi2-atk
     at-spi2-core
+    bubblewrap
     cairo
     cups
     dbus
@@ -148,12 +152,45 @@ stdenv.mkDerivation (finalAttrs: {
     # Symlink launcher
     ln -s $out/lib/chatgpt/ChatGPT $out/bin/chatgpt
 
+    # Patch detect-libc inside app.asar to neutralize the process.report SIGILL trap
+    # and short-circuit glibc detection for @parcel/watcher when workspace folders are opened.
+    python3 -c "
+asar_path = '$out/lib/chatgpt/resources/app.asar'
+with open(asar_path, 'rb') as f:
+    content = f.read()
+
+# 1. Neutralize process.report trap in detect-libc/lib/process.js
+t1 = b'if (isLinux() && process.report) {'
+r1 = b'if (false && (process.report)) {  '
+assert len(t1) == len(r1), 'Length mismatch for t1'
+assert t1 in content, 'Target t1 not found in app.asar'
+content = content.replace(t1, r1, 1)
+
+# 2. Prevent process.report.getReport() call in detect-libc/lib/process.js
+t2 = b'report = process.report.getReport();'
+r2 = b'report = {};                        '
+assert len(t2) == len(r2), 'Length mismatch for t2'
+assert t2 in content, 'Target t2 not found in app.asar'
+content = content.replace(t2, r2, 1)
+
+# 3. Short-circuit familyFromReport in detect-libc/lib/detect-libc.js to return GLIBC immediately
+t3 = b'const familyFromReport = () => {\n  const report = getReport();'
+r3 = b'const familyFromReport = () => {\n  return GLIBC;              '
+assert len(t3) == len(r3), 'Length mismatch for t3'
+assert t3 in content, 'Target t3 not found in app.asar'
+content = content.replace(t3, r3, 1)
+
+with open(asar_path, 'wb') as f:
+    f.write(content)
+print('Successfully patched detect-libc inside app.asar')
+"
+
     runHook postInstall
   '';
 
   preFixup = ''
     gappsWrapperArgs+=(
-      --prefix PATH : ${lib.makeBinPath [ xdg-utils git diffutils ]}
+      --prefix PATH : ${lib.makeBinPath [ xdg-utils git diffutils bubblewrap stdenv.cc.libc.bin ]}
       --prefix XDG_DATA_DIRS : "${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}"
       --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}"
       --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
