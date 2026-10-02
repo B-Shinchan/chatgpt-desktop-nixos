@@ -25,5 +25,9 @@
         program = "${chatgpt-desktop}/bin/chatgpt";
         meta.description = "Official ChatGPT Linux desktop application by OpenAI";
       };
+
+      overlays.default = final: prev: {
+        chatgpt-desktop = final.callPackage ./package.nix { };
+      };
     };
 }

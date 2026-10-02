@@ -55,6 +55,10 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 - **Problem**: On initial startup, Codex generates `~/.codex/config.toml` containing hardcoded absolute store paths to `node_repl`, `codex`, and Node runtime modules (e.g. `command = "/nix/store/...-chatgpt-desktop-.../lib/chatgpt/resources/cua_node/bin/node_repl"`). Whenever the package is rebuilt, updated, or garbage-collected, `config.toml` continues pointing to the old (potentially deleted or broken) Nix store path, causing child process `SIGSEGV` or execution failures when opening workspaces or running Code Mode.
 - **Solution**: The application launcher wrapper automatically detects if `~/.codex/config.toml` exists and rewrites any legacy `/nix/store/*-chatgpt-desktop-*` paths to match the active package store path (`$out`) before the process begins.
 
+### 10. Workspace / Folder Attachment & `@parcel/watcher` `detect-libc` SIGILL Trap
+- **Problem**: Opening local folders or attaching project directories initializes the git repository watcher (`[git-repo-watcher] Starting git repo watcher`), powered by `@parcel/watcher`. `@parcel/watcher` depends on `detect-libc` to decide between `glibc` and `musl` native bindings. On NixOS, because `/usr/bin/ldd` does not exist and the ELF interpreter string is moved outside the initial 2KB header buffer by patchelf, `detect-libc` fell back to calling Node's `process.report.getReport()`. Inside Electron, `process.report.getReport()` hits an unsupported code path that deliberately triggers an immediate abort / illegal instruction (`SIGILL` via `ud1`), crashing the entire application. Additionally, `codex sandbox` failed when `bwrap` (bubblewrap) was missing from the runtime path.
+- **Solution**: The derivation binary-patches `detect-libc` inside `app.asar` during `installPhase` to neutralize the `process.report` trap, bypass `process.report.getReport()`, and short-circuit `familyFromReport()` to return `GLIBC` immediately. Furthermore, `bubblewrap` and `stdenv.cc.libc.bin` (`getconf`, `ldd`) are injected into the runtime `PATH` wrapper, ensuring the Codex sandbox probe passes and local folders attach cleanly without termination.
+
 ---
 
 ## Feature Matrix
@@ -64,6 +68,7 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 | **Core Desktop Chat** | **Supported** | Full Electron runtime parity with the official `.deb` release. |
 | **Codex Daemon (`app-server`)** | **Supported** | Pristine static-PIE execution; avoids patchelf memory layout corruption. |
 | **Code Mode REPL (`node_repl`)** | **Supported** | Bundled MCP stdio server preserved intact for code execution and file editing. |
+| **Workspace & Folder Attachment** | **Supported** | Neutralized `detect-libc` SIGILL trap; bundled `bubblewrap` and `git`/`diffutils` for file watching and sandbox isolation. |
 | **Folder & File Pickers** | **Supported** | Broken Qt shims removed; `GTK_USE_PORTAL=1` enforced; GSettings schemas in `XDG_DATA_DIRS`. |
 | **Config Store Path Auto-Migration** | **Supported** | Launcher auto-migrates `~/.codex/config.toml` Nix store paths across package updates. |
 | **Workspace Git Integration** | **Supported** | `git` and `diffutils` bundled in runtime `PATH` for project tracking. |
@@ -127,7 +132,12 @@ Because ChatGPT Desktop contains proprietary binaries from OpenAI, ensure unfree
 
   environment.systemPackages = [
     inputs.chatgpt-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
+    # Or if using overlays:
+    # pkgs.chatgpt-desktop
   ];
+
+  # Optional: Overlay method
+  # nixpkgs.overlays = [ inputs.chatgpt-desktop.overlays.default ];
 
   # Required for credential persistence on standalone Wayland compositors:
   services.gnome.gnome-keyring.enable = true;
