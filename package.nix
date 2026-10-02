@@ -8,6 +8,9 @@
   makeWrapper,
   addDriverRunpath,
   cacert,
+  diffutils,
+  git,
+  gsettings-desktop-schemas,
   libglvnd,
   xdg-utils,
   alsa-lib,
@@ -67,7 +70,9 @@ stdenv.mkDerivation (finalAttrs: {
     dbus
     expat
     gdk-pixbuf
+    git
     glib
+    gsettings-desktop-schemas
     gtk3
     libdrm
     libnotify
@@ -127,6 +132,8 @@ stdenv.mkDerivation (finalAttrs: {
     cp -a usr/lib/chatgpt/resources/codex "$TMPDIR/static-binaries/codex"
     cp -a usr/lib/chatgpt/resources/codex-code-mode-host "$TMPDIR/static-binaries/codex-code-mode-host"
     cp -a usr/lib/chatgpt/resources/rg "$TMPDIR/static-binaries/rg"
+    cp -a usr/lib/chatgpt/resources/tectonic/tectonic "$TMPDIR/static-binaries/tectonic"
+    cp -a usr/lib/chatgpt/resources/cua_node/bin/node_repl "$TMPDIR/static-binaries/node_repl"
 
     # Install desktop entry
     install -Dm644 usr/share/applications/chatgpt.desktop $out/share/applications/chatgpt.desktop
@@ -146,7 +153,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   preFixup = ''
     gappsWrapperArgs+=(
-      --prefix PATH : ${lib.makeBinPath [ xdg-utils ]}
+      --prefix PATH : ${lib.makeBinPath [ xdg-utils git diffutils ]}
+      --prefix XDG_DATA_DIRS : "${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}"
+      --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}"
       --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
       --set NIX_SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
       --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations --password-store=gnome-libsecret"
@@ -159,6 +168,11 @@ stdenv.mkDerivation (finalAttrs: {
       cp -fa "$TMPDIR/static-binaries/codex" "$out/lib/chatgpt/resources/codex"
       cp -fa "$TMPDIR/static-binaries/codex-code-mode-host" "$out/lib/chatgpt/resources/codex-code-mode-host"
       cp -fa "$TMPDIR/static-binaries/rg" "$out/lib/chatgpt/resources/rg"
+      cp -fa "$TMPDIR/static-binaries/tectonic" "$out/lib/chatgpt/resources/tectonic/tectonic"
+      cp -fa "$TMPDIR/static-binaries/node_repl" "$out/lib/chatgpt/resources/cua_node/bin/node_repl"
+      chmod +x $out/lib/chatgpt/resources/{codex,codex-code-mode-host,rg}
+      chmod +x $out/lib/chatgpt/resources/tectonic/tectonic
+      chmod +x $out/lib/chatgpt/resources/cua_node/bin/node_repl
     }
     postFixupHooks+=(restoreStaticBinaries)
   '';
@@ -174,6 +188,10 @@ stdenv.mkDerivation (finalAttrs: {
     echo "Running install checks..."
     $out/lib/chatgpt/resources/codex --version
     $out/lib/chatgpt/resources/rg --version
+    $out/lib/chatgpt/resources/tectonic/tectonic --version
+    $out/lib/chatgpt/resources/codex-code-mode-host --help
+    $out/lib/chatgpt/resources/cua_node/bin/node --version
+    $out/lib/chatgpt/resources/cua_node/bin/node_repl --help
     echo "Install checks passed successfully!"
   '';
 
