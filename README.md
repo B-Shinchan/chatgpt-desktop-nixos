@@ -1,11 +1,17 @@
-# ChatGPT Desktop on NixOS
+<div align="center">
+  <img src="./assets/chatgpt-logo.png" alt="ChatGPT Desktop Logo" width="128" height="128" />
+  <h1>ChatGPT Desktop on NixOS</h1>
+  <p>Official OpenAI ChatGPT Linux desktop application packaged natively for NixOS</p>
 
-[![Nix Flake](https://img.shields.io/badge/Nix_Flake-blue?logo=nixos&logoColor=white)](https://nixos.org)
-[![Platform](https://img.shields.io/badge/Platform-x86__64--linux-lightgrey?logo=linux&logoColor=white)](https://nixos.org)
-[![Wayland Ready](https://img.shields.io/badge/Wayland-Ready-green?logo=wayland&logoColor=white)](https://wayland.freedesktop.org/)
-[![Packaging License: MIT](https://img.shields.io/badge/Packaging_License-MIT-yellow.svg)](./LICENSE)
+  <p>
+    <a href="https://nixos.org"><img src="https://img.shields.io/badge/Nix_Flake-blue?logo=nixos&logoColor=white" alt="Nix Flake" /></a>
+    <a href="https://nixos.org"><img src="https://img.shields.io/badge/Platform-x86__64--linux-lightgrey?logo=linux&logoColor=white" alt="Platform" /></a>
+    <a href="https://wayland.freedesktop.org/"><img src="https://img.shields.io/badge/Wayland-Ready-green?logo=wayland&logoColor=white" alt="Wayland Ready" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/Packaging_License-MIT-yellow.svg" alt="License" /></a>
+  </p>
+</div>
 
-Repackaging of OpenAI's official ChatGPT Linux desktop (`.deb`) application for NixOS, featuring out-of-the-box native Wayland rendering, GNOME Keyring Secret Service persistence across Wayland compositors (Niri, Hyprland, Sway), sanitized MIME protocol associations, and uncorrupted static-PIE execution for the bundled Codex backend daemon.
+Repackaging of OpenAI's official ChatGPT Linux desktop (`.deb`) application for NixOS, featuring out-of-the-box native Wayland rendering, GNOME Keyring Secret Service persistence across Wayland compositors (Niri, Hyprland, Sway), complete FreeDesktop icon theming, sanitized MIME protocol associations, and uncorrupted static-PIE execution for the bundled Codex backend daemon.
 
 ---
 
@@ -59,6 +65,10 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 - **Problem**: Opening local folders or attaching project directories initializes the git repository watcher (`[git-repo-watcher] Starting git repo watcher`), powered by `@parcel/watcher`. `@parcel/watcher` depends on `detect-libc` to decide between `glibc` and `musl` native bindings. On NixOS, because `/usr/bin/ldd` does not exist and the ELF interpreter string is moved outside the initial 2KB header buffer by patchelf, `detect-libc` fell back to calling Node's `process.report.getReport()`. Inside Electron, `process.report.getReport()` hits an unsupported code path that deliberately triggers an immediate abort / illegal instruction (`SIGILL` via `ud1`), crashing the entire application. Additionally, `codex sandbox` failed when `bwrap` (bubblewrap) was missing from the runtime path.
 - **Solution**: The derivation binary-patches `detect-libc` inside `app.asar` during `installPhase` to neutralize the `process.report` trap, bypass `process.report.getReport()`, and short-circuit `familyFromReport()` to return `GLIBC` immediately. Furthermore, `bubblewrap` and `stdenv.cc.libc.bin` (`getconf`, `ldd`) are injected into the runtime `PATH` wrapper, ensuring the Codex sandbox probe passes and local folders attach cleanly without termination.
 
+### 11. Complete FreeDesktop Icon Theming & Wayland Window Association
+- **Problem**: Upstream only bundles a single raw 1024x1024 PNG image under `/usr/share/pixmaps/`. Standard FreeDesktop icon loaders (`GtkIconTheme`, `Qt`, GNOME Shell, Niri, Waybar, Rofi) index standard resolutions (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`, `128x128`, `256x256`, `512x512`) from `hicolor-icon-theme` and ignore unindexed 1024px directories. Furthermore, Wayland assigns the window `app_id` as `"Chatgpt"`, which failed to match the lowercase `chatgpt.desktop` without `StartupWMClass`, causing missing or generic fallback icons on GNOME and Niri.
+- **Solution**: The derivation generates a complete suite of Lanczos-resampled icons across all standard FreeDesktop resolutions (`16x16` through `512x512`, plus `1024x1024`) with aliases (`chatgpt`, `Chatgpt`, `ChatGPT`, `com.openai.chatgpt`). It also injects `StartupWMClass=Chatgpt` into `chatgpt.desktop` and installs case-insensitive desktop entry symlinks, ensuring instant recognition in application menus, docks, window switchers, and Wayland compositor titlebars.
+
 ---
 
 ## Feature Matrix
@@ -66,6 +76,7 @@ OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64`
 | Feature | Status | Implementation Details |
 | :--- | :---: | :--- |
 | **Core Desktop Chat** | **Supported** | Full Electron runtime parity with the official `.deb` release. |
+| **Official Desktop & Window Icons** | **Supported** | Complete FreeDesktop `hicolor` hierarchy (16px to 1024px); `StartupWMClass=Chatgpt` matching for Niri & GNOME. |
 | **Codex Daemon (`app-server`)** | **Supported** | Pristine static-PIE execution; avoids patchelf memory layout corruption. |
 | **Code Mode REPL (`node_repl`)** | **Supported** | Bundled MCP stdio server preserved intact for code execution and file editing. |
 | **Workspace & Folder Attachment** | **Supported** | Neutralized `detect-libc` SIGILL trap; bundled `bubblewrap` and `git`/`diffutils` for file watching and sandbox isolation. |

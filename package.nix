@@ -12,6 +12,7 @@
   diffutils,
   git,
   gnused,
+  imagemagick,
   gsettings-desktop-schemas,
   libglvnd,
   python3,
@@ -63,6 +64,7 @@ stdenv.mkDerivation (finalAttrs: {
     wrapGAppsHook3
     makeWrapper
     addDriverRunpath
+    imagemagick
     python3
   ];
 
@@ -145,9 +147,36 @@ stdenv.mkDerivation (finalAttrs: {
       --replace-fail "Exec=chatgpt %U" "Exec=$out/bin/chatgpt %U" \
       --replace-fail "x-scheme-handler/codex;x-scheme-handler/http;x-scheme-handler/https;" "x-scheme-handler/chatgpt;x-scheme-handler/codex;"
 
-    # Install icons
-    install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/pixmaps/chatgpt.png
+    # Inject StartupWMClass so Wayland compositors (Niri, GNOME Wayland, Hyprland, Sway)
+    # and X11 taskbars accurately associate the running window (app_id="Chatgpt") with this desktop file and icon
+    echo "StartupWMClass=Chatgpt" >> $out/share/applications/chatgpt.desktop
+
+    # Install desktop entry aliases for reverse-DNS and case variations
+    ln -s chatgpt.desktop $out/share/applications/Chatgpt.desktop
+    ln -s chatgpt.desktop $out/share/applications/ChatGPT.desktop
+    ln -s chatgpt.desktop $out/share/applications/com.openai.chatgpt.desktop
+
+    # Generate and install icons in all standard FreeDesktop hicolor resolutions
+    for size in 16 24 32 48 64 128 256 512; do
+      mkdir -p $out/share/icons/hicolor/''${size}x''${size}/apps
+      magick usr/share/pixmaps/chatgpt.png -filter Lanczos -resize ''${size}x''${size} $out/share/icons/hicolor/''${size}x''${size}/apps/chatgpt.png
+      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/Chatgpt.png
+      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/ChatGPT.png
+      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/com.openai.chatgpt.png
+    done
+
+    # 1024x1024 high-res icon
+    mkdir -p $out/share/icons/hicolor/1024x1024/apps
     install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/icons/hicolor/1024x1024/apps/chatgpt.png
+    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/Chatgpt.png
+    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/ChatGPT.png
+    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/com.openai.chatgpt.png
+
+    # Install pixmaps with case variants
+    install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/pixmaps/chatgpt.png
+    ln -s chatgpt.png $out/share/pixmaps/Chatgpt.png
+    ln -s chatgpt.png $out/share/pixmaps/ChatGPT.png
+    ln -s chatgpt.png $out/share/pixmaps/com.openai.chatgpt.png
 
     # Symlink launcher
     ln -s $out/lib/chatgpt/ChatGPT $out/bin/chatgpt
