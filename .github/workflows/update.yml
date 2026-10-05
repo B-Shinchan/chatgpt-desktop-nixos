@@ -1,0 +1,80 @@
+name: Check & Update Upstream
+
+on:
+  schedule:
+    - cron: '30 4 * * 1' # Every Monday at 04:30 UTC
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-unfree = true
+
+      - name: Check upstream OpenAI package
+        id: check
+        run: |
+          set -euo pipefail
+          DEB_URL="https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb"
+
+          echo "Prefetching latest deb..."
+          STORE_PATH=$(nix-prefetch-url --print-path "$DEB_URL" | tail -n1)
+          SRI_HASH=$(nix hash path "$STORE_PATH")
+
+          # Extract version from Debian package control metadata
+          UPSTREAM_VER=$(dpkg-deb -f "$STORE_PATH" Version)
+
+          # Read current version from package.nix
+          CURRENT_VER=$(grep -oP 'version\s*=\s*"\K[^"]+' package.nix)
+          CURRENT_HASH=$(grep -oP 'hash\s*=\s*"\K[^"]+' package.nix)
+
+          echo "Current version: $CURRENT_VER ($CURRENT_HASH)"
+          echo "Upstream version: $UPSTREAM_VER ($SRI_HASH)"
+
+          if [ "$CURRENT_VER" = "$UPSTREAM_VER" ] && [ "$CURRENT_HASH" = "$SRI_HASH" ]; then
+            echo "Already up to date."
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream release detected: $UPSTREAM_VER"
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "version=$UPSTREAM_VER" >> "$GITHUB_OUTPUT"
+            echo "sri_hash=$SRI_HASH" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update package.nix and test build
+        if: steps.check.outputs.has_update == 'true'
+        run: |
+          NEW_VER="${{ steps.check.outputs.version }}"
+          NEW_HASH="${{ steps.check.outputs.sri_hash }}"
+          echo "Updating to version $NEW_VER with hash $NEW_HASH"
+
+          sed -i -E "s/version = \"[^\"]+\";/version = \"$NEW_VER\";/" package.nix
+          sed -i -E "s|hash = \"sha256-[^\"]+\";|hash = \"$NEW_HASH\";|" package.nix
+
+          echo "Building package..."
+          nix build .#default
+
+          echo "Running health checks..."
+          ./result/bin/chatgpt --version
+          ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
+
+      - name: Commit and push update
+        if: steps.check.outputs.has_update == 'true'
+        run: |
+          NEW_VER="${{ steps.check.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.nix
+          git commit -m "chore(deps): update upstream to v$NEW_VER"
+          git push origin main

@@ -1,0 +1,31 @@
+name: CI Build & Health Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-unfree = true
+
+      - name: Build ChatGPT Desktop Package
+        run: nix build .#default
+
+      - name: Verify Version Output
+        run: ./result/bin/chatgpt --version
+
+      - name: Verify Codex Sandbox Isolation
+        run: ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
