@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NIXPKGS_ALLOW_UNFREE: 1
 
     steps:
       - name: Checkout repository
@@ -19,13 +21,12 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-            allow-unfree = true
 
       - name: Build ChatGPT Desktop Package
-        run: nix build .#default
+        run: nix build .#default --impure
 
       - name: Verify Version Output
         run: ./result/bin/chatgpt --version
 
       - name: Verify Codex Sandbox Isolation
-        run: ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
+        run: nix shell nixpkgs#bubblewrap -c ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"

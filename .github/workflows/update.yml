@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      NIXPKGS_ALLOW_UNFREE: 1
 
     steps:
       - name: Checkout repository
@@ -20,7 +22,6 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-            allow-unfree = true
 
       - name: Check upstream OpenAI package
         id: check
@@ -63,11 +64,11 @@ jobs:
           sed -i -E "s|hash = \"sha256-[^\"]+\";|hash = \"$NEW_HASH\";|" package.nix
 
           echo "Building package..."
-          nix build .#default
+          nix build .#default --impure
 
           echo "Running health checks..."
           ./result/bin/chatgpt --version
-          ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
+          nix shell nixpkgs#bubblewrap -c ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
 
       - name: Commit and push update
         if: steps.check.outputs.has_update == 'true'
