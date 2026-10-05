@@ -30,7 +30,7 @@ jobs:
 
           echo "Prefetching latest deb..."
           STORE_PATH=$(nix-prefetch-url --print-path "$DEB_URL" | tail -n1)
-          SRI_HASH=$(nix hash path "$STORE_PATH")
+          SRI_HASH=$(nix hash file "$STORE_PATH")
 
           # Extract version from Debian package control metadata
           UPSTREAM_VER=$(dpkg-deb -f "$STORE_PATH" Version)
