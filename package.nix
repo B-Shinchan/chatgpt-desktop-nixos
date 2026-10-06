@@ -51,11 +51,11 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "chatgpt-desktop";
-  version = "26.930.51102";
+  version = "26.930.61225";
 
   src = fetchurl {
     url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb";
-    hash = "sha256-Y3w8lLxQ+O4zoV4uKOx/kqeH8JQ+cA7+ERvAvw1IE7Q=";
+    hash = "sha256-uQqA+TU7wSpaW4RpUCqOV5SjxUo3HIiA4JTVAN5pW7g=";
   };
 
   nativeBuildInputs = [
@@ -151,10 +151,6 @@ stdenv.mkDerivation (finalAttrs: {
     # and X11 taskbars accurately associate the running window (app_id="Chatgpt") with this desktop file and icon
     echo "StartupWMClass=Chatgpt" >> $out/share/applications/chatgpt.desktop
 
-    # Install desktop entry aliases for reverse-DNS and case variations
-    ln -s chatgpt.desktop $out/share/applications/Chatgpt.desktop
-    ln -s chatgpt.desktop $out/share/applications/ChatGPT.desktop
-    ln -s chatgpt.desktop $out/share/applications/com.openai.chatgpt.desktop
 
     # Generate and install icons in all standard FreeDesktop hicolor resolutions
     for size in 16 24 32 48 64 128 256 512; do
