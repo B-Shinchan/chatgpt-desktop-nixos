@@ -51,11 +51,11 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "chatgpt-desktop";
-  version = "26.1007.21434";
+  version = "26.1013.40934";
 
   src = fetchurl {
     url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb";
-    hash = "sha256-J2tTQcPXSyYdOtUhBvf6ft3gaEHkdn/ipAy1QJmx8+0=";
+    hash = "sha256-PKWef5pmQbni+5rWgGg3hLWrgCb/dBj7ISoOvl3zodc=";
   };
 
   nativeBuildInputs = [
@@ -223,7 +223,7 @@ print('Successfully patched detect-libc inside app.asar')
       --set-default GTK_USE_PORTAL 1
       --set-default CODEX_CLI_PATH "$out/lib/chatgpt/resources/codex"
       --set-default CODEX_ELECTRON_RESOURCES_PATH "$out/lib/chatgpt/resources"
-      --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
+      --add-flags "--ozone-platform=wayland --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
       --run 'if [ -f "$HOME/.codex/config.toml" ] && [ -w "$HOME/.codex/config.toml" ]; then ${gnused}/bin/sed -i -E "s|/nix/store/[a-z0-9]+-chatgpt-desktop-[^/]+|'"$out"'|g" "$HOME/.codex/config.toml"; fi'
     )
 
