@@ -84,6 +84,7 @@ def main():
                     application = subprocess.Popen(
                         [
                             "dbus-run-session",
+                            f"--config-file={ROOT / 'tests/dbus-session.conf'}",
                             "--",
                             str(ROOT / "result/bin" / PROGRAM),
                             "--ozone-platform=wayland",
@@ -122,4 +123,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            message = str(error)[-4000:]
+            message = (
+                message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            )
+            print(f"::error::{message}", flush=True)
+        raise

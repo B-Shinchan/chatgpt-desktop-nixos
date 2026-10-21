@@ -14,11 +14,11 @@ nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck -c sh -c 'action
 nix flake check --print-build-logs
 nix build .#default --print-build-logs
 nix shell --inputs-from . nixpkgs#xvfb-run nixpkgs#dbus -c bash scripts/check-runtime.sh
-nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session -- python3 scripts/check-x11.py
+nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session --config-file=tests/dbus-session.conf -- python3 scripts/check-x11.py
 nix shell --inputs-from . nixpkgs#python3 nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py
 ```
 
-The runtime check uses temporary profiles under the ignored `.cache` directory. It does not sign in or read your application profile. Linux user namespaces must be available for sandbox checks. GitHub's Ubuntu runner needs the workflow's AppArmor adjustment; do not disable sandboxing on your desktop to make a test pass.
+The runtime check uses temporary profiles under the ignored `.cache` directory. It does not sign in or read your application profile. The private D-Bus configuration in `tests/dbus-session.conf` avoids host configuration and service activation. Linux user namespaces must be available for sandbox checks. GitHub's Ubuntu runner needs the workflow's AppArmor adjustment; do not disable sandboxing on your desktop to make a test pass.
 
 To inspect an upstream package update locally:
 

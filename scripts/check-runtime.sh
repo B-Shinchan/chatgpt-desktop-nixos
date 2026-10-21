@@ -9,7 +9,7 @@ check_home=$(mktemp -d "$repo/.cache/runtime-home.XXXXXX")
 trap 'rm -rf "$check_home"' EXIT
 # This exercises the packaged launcher under a real (headless) X11 display.
 expected=$(nix eval --raw .#packages.x86_64-linux.default.version)
-actual=$(env -u CODEX_HOME HOME="$check_home" XDG_CONFIG_HOME="$check_home/config" XDG_CACHE_HOME="$check_home/cache" XDG_DATA_HOME="$check_home/data" timeout 60s xvfb-run -a dbus-run-session -- "$result/bin/chatgpt" --ozone-platform=x11 --version)
+actual=$(env -u CODEX_HOME HOME="$check_home" XDG_CONFIG_HOME="$check_home/config" XDG_CACHE_HOME="$check_home/cache" XDG_DATA_HOME="$check_home/data" timeout 60s xvfb-run -a dbus-run-session --config-file="$repo/tests/dbus-session.conf" -- "$result/bin/chatgpt" --ozone-platform=x11 --version)
 printf 'Packaged version: %s\n' "$actual"
 test "$actual" = "$expected"
 env -u CODEX_HOME HOME="$check_home" "$result/lib/chatgpt/resources/codex" --version

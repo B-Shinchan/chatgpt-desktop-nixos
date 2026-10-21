@@ -54,7 +54,7 @@ jobs:
       - name: Check X11 window identity
         run: |
           mkdir -p .cache
-          if nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session -- python3 scripts/check-x11.py > .cache/x11-ci.log 2>&1; then
+          if nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session --config-file=tests/dbus-session.conf -- python3 scripts/check-x11.py > .cache/x11-ci.log 2>&1; then
             cat .cache/x11-ci.log
           else
             cat .cache/x11-ci.log
