@@ -1,0 +1,6 @@
+# Security-sensitive changes should receive owner review.
+/.github/ @B-Shinchan
+/scripts/ @B-Shinchan
+/package.nix @B-Shinchan
+/flake.nix @B-Shinchan
+/flake.lock @B-Shinchan

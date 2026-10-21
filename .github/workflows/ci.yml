@@ -2,34 +2,57 @@ name: CI Build & Health Check
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    env:
-      NIXPKGS_ALLOW_UNFREE: 1
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable unprivileged user namespaces for Bubblewrap
+        with:
+          persist-credentials: false
+
+      - name: Enable user namespaces for the runtime sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Build ChatGPT Desktop Package
-        run: nix build .#default --impure
+      - name: Install headless desktop test tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth dbus-x11
 
-      - name: Verify Version Output
-        run: ./result/bin/chatgpt --version
+      - name: Test update selection
+        run: python3 -m unittest discover -s tests -v
 
-      - name: Verify Codex Sandbox Isolation
-        run: nix shell nixpkgs#bubblewrap -c ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
+      - name: Validate workflow and shell syntax
+        run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck -c sh -c 'actionlint && shellcheck scripts/*.sh'
+
+      - name: Check Nix formatting
+        run: nix fmt -- --check *.nix
+
+      - name: Check flake, updater, and desktop integration
+        run: nix flake check --print-build-logs
+
+      - name: Build package
+        run: nix build .#default --print-build-logs
+
+      - name: Check packaged runtime
+        run: bash scripts/check-runtime.sh
+
+      - name: Check X11 window identity
+        run: nix shell --inputs-from . nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -a dbus-run-session -- python3 scripts/check-x11.py
+
+      - name: Check Wayland window identity
+        run: nix shell --inputs-from . nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py

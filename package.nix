@@ -3,6 +3,7 @@
   stdenv,
   fetchurl,
   dpkg,
+  desktop-file-utils,
   autoPatchelfHook,
   wrapGAppsHook3,
   makeWrapper,
@@ -11,7 +12,6 @@
   cacert,
   diffutils,
   git,
-  gnused,
   imagemagick,
   gsettings-desktop-schemas,
   libglvnd,
@@ -33,12 +33,13 @@
   libsecret,
   libusb1,
   libxkbcommon,
-  mesa,
+  libgbm,
   nspr,
   nss,
   pango,
   pipewire,
   systemd,
+  tpm2-tss,
   libx11,
   libxcomposite,
   libxdamage,
@@ -51,15 +52,17 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "chatgpt-desktop";
-  version = "26.1013.40934";
+  version = "26.1016.51333";
 
   src = fetchurl {
-    url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb";
-    hash = "sha256-PKWef5pmQbni+5rWgGg3hLWrgCb/dBj7ISoOvl3zodc=";
+    name = "chatgpt_amd64.deb";
+    url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_${finalAttrs.version}_amd64.deb";
+    hash = "sha256-x59/0k/X2LZDmUKpcwbFYT2OBJkD2JPxNqBb/tVR3Io=";
   };
 
   nativeBuildInputs = [
     dpkg
+    desktop-file-utils
     autoPatchelfHook
     wrapGAppsHook3
     makeWrapper
@@ -88,11 +91,12 @@ stdenv.mkDerivation (finalAttrs: {
     libsecret
     libusb1
     libxkbcommon
-    mesa
+    libgbm
     nspr
     nss
     pango
     systemd
+    tpm2-tss
     libx11
     libxcomposite
     libxdamage
@@ -116,115 +120,125 @@ stdenv.mkDerivation (finalAttrs: {
     "libc.musl-x86_64.so.1"
   ];
 
-  appendRunpaths = [
-    "$out/lib/chatgpt"
-  ];
+  # The vendor's CUA Node executable crashes if patchelf reorders its ELF
+  # headers. Preserve that layout instead of replacing the custom runtime.
+  patchelfFlags = [ "--no-sort" ];
 
   dontWrapGApps = true;
 
   installPhase = ''
-    runHook preInstall
+        runHook preInstall
 
-    mkdir -p $out/lib/chatgpt $out/bin $out/share/applications $out/share/pixmaps $out/share/icons/hicolor/1024x1024/apps
+        mkdir -p $out/lib/chatgpt $out/bin $out/share/applications $out/share/pixmaps $out/share/icons/hicolor/1024x1024/apps
 
-    # Move application files
-    cp -r usr/lib/chatgpt/* $out/lib/chatgpt/
+        # Move application files
+        cp -r usr/lib/chatgpt/. $out/lib/chatgpt/
 
-    # Eliminate broken and unused Qt shims completely so Electron never attempts to dlopen them
-    rm -f $out/lib/chatgpt/libqt5_shim.so $out/lib/chatgpt/libqt6_shim.so
+        # Eliminate broken and unused Qt shims completely so Electron never attempts to dlopen them
+        rm -f $out/lib/chatgpt/libqt5_shim.so $out/lib/chatgpt/libqt6_shim.so
 
-    # Backup uncorrupted static-pie binaries before autoPatchelf alters them
-    mkdir -p "$TMPDIR/static-binaries"
-    cp -a usr/lib/chatgpt/resources/codex "$TMPDIR/static-binaries/codex"
-    cp -a usr/lib/chatgpt/resources/codex-code-mode-host "$TMPDIR/static-binaries/codex-code-mode-host"
-    cp -a usr/lib/chatgpt/resources/rg "$TMPDIR/static-binaries/rg"
-    cp -a usr/lib/chatgpt/resources/tectonic/tectonic "$TMPDIR/static-binaries/tectonic"
-    cp -a usr/lib/chatgpt/resources/cua_node/bin/node_repl "$TMPDIR/static-binaries/node_repl"
+        # Backup uncorrupted static-pie binaries before autoPatchelf alters them
+        mkdir -p "$TMPDIR/static-binaries"
+        cp -a usr/lib/chatgpt/resources/codex "$TMPDIR/static-binaries/codex"
+        cp -a usr/lib/chatgpt/resources/codex-code-mode-host "$TMPDIR/static-binaries/codex-code-mode-host"
+        cp -a usr/lib/chatgpt/resources/rg "$TMPDIR/static-binaries/rg"
+        cp -a usr/lib/chatgpt/resources/tectonic/tectonic "$TMPDIR/static-binaries/tectonic"
+        cp -a usr/lib/chatgpt/resources/cua_node/bin/node_repl "$TMPDIR/static-binaries/node_repl"
 
-    # Install desktop entry
-    install -Dm644 usr/share/applications/chatgpt.desktop $out/share/applications/chatgpt.desktop
-    substituteInPlace $out/share/applications/chatgpt.desktop \
-      --replace-fail "Exec=chatgpt %U" "Exec=$out/bin/chatgpt %U" \
-      --replace-fail "x-scheme-handler/codex;x-scheme-handler/http;x-scheme-handler/https;" "x-scheme-handler/chatgpt;x-scheme-handler/codex;"
+        # Install desktop entry
+        install -Dm644 usr/share/applications/chatgpt.desktop $out/share/applications/chatgpt.desktop
+        substituteInPlace $out/share/applications/chatgpt.desktop \
+          --replace-fail "Exec=chatgpt %U" "Exec=$out/bin/chatgpt %U" \
+          --replace-fail "x-scheme-handler/codex;x-scheme-handler/http;x-scheme-handler/https;" "x-scheme-handler/chatgpt;x-scheme-handler/codex;"
 
-    # Inject StartupWMClass so Wayland compositors (Niri, GNOME Wayland, Hyprland, Sway)
-    # and X11 taskbars accurately associate the running window (app_id="Chatgpt") with this desktop file and icon
-    echo "StartupWMClass=Chatgpt" >> $out/share/applications/chatgpt.desktop
+        # Use one main category so menus do not duplicate the application.
+    desktop-file-edit --set-key=Categories --set-value="Utility;" $out/share/applications/chatgpt.desktop
+
+    # X11 WM_CLASS is Chatgpt; the Wayland app_id is independently checked
+    # against chatgpt.desktop by the headless Wayland test.
+    desktop-file-edit --set-key=StartupWMClass --set-value="Chatgpt" $out/share/applications/chatgpt.desktop
 
 
-    # Generate and install icons in all standard FreeDesktop hicolor resolutions
-    for size in 16 24 32 48 64 128 256 512; do
-      mkdir -p $out/share/icons/hicolor/''${size}x''${size}/apps
-      magick usr/share/pixmaps/chatgpt.png -filter Lanczos -resize ''${size}x''${size} $out/share/icons/hicolor/''${size}x''${size}/apps/chatgpt.png
-      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/Chatgpt.png
-      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/ChatGPT.png
-      ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/com.openai.chatgpt.png
-    done
+        # Generate and install icons in all standard FreeDesktop hicolor resolutions
+        for size in 16 24 32 48 64 128 256 512; do
+          mkdir -p $out/share/icons/hicolor/''${size}x''${size}/apps
+          magick usr/share/pixmaps/chatgpt.png -filter Lanczos -resize ''${size}x''${size} $out/share/icons/hicolor/''${size}x''${size}/apps/chatgpt.png
+          ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/Chatgpt.png
+          ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/ChatGPT.png
+          ln -s chatgpt.png $out/share/icons/hicolor/''${size}x''${size}/apps/com.openai.chatgpt.png
+        done
 
-    # 1024x1024 high-res icon
-    mkdir -p $out/share/icons/hicolor/1024x1024/apps
-    install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/icons/hicolor/1024x1024/apps/chatgpt.png
-    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/Chatgpt.png
-    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/ChatGPT.png
-    ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/com.openai.chatgpt.png
+        # 1024x1024 high-res icon
+        mkdir -p $out/share/icons/hicolor/1024x1024/apps
+        install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/icons/hicolor/1024x1024/apps/chatgpt.png
+        ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/Chatgpt.png
+        ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/ChatGPT.png
+        ln -s chatgpt.png $out/share/icons/hicolor/1024x1024/apps/com.openai.chatgpt.png
 
-    # Install pixmaps with case variants
-    install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/pixmaps/chatgpt.png
-    ln -s chatgpt.png $out/share/pixmaps/Chatgpt.png
-    ln -s chatgpt.png $out/share/pixmaps/ChatGPT.png
-    ln -s chatgpt.png $out/share/pixmaps/com.openai.chatgpt.png
+        # Install pixmaps with case variants
+        install -Dm644 usr/share/pixmaps/chatgpt.png $out/share/pixmaps/chatgpt.png
+        ln -s chatgpt.png $out/share/pixmaps/Chatgpt.png
+        ln -s chatgpt.png $out/share/pixmaps/ChatGPT.png
+        ln -s chatgpt.png $out/share/pixmaps/com.openai.chatgpt.png
 
-    # Symlink launcher
-    ln -s $out/lib/chatgpt/ChatGPT $out/bin/chatgpt
+        # Symlink launcher
+        ln -s $out/lib/chatgpt/ChatGPT $out/bin/chatgpt
 
-    # Patch detect-libc inside app.asar to neutralize the process.report SIGILL trap
-    # and short-circuit glibc detection for @parcel/watcher when workspace folders are opened.
-    python3 -c "
-asar_path = '$out/lib/chatgpt/resources/app.asar'
-with open(asar_path, 'rb') as f:
-    content = f.read()
+        # Patch detect-libc inside app.asar to neutralize the process.report SIGILL trap
+        # and short-circuit glibc detection for @parcel/watcher when workspace folders are opened.
+        python3 -c "
+    asar_path = '$out/lib/chatgpt/resources/app.asar'
+    with open(asar_path, 'rb') as f:
+        content = f.read()
 
-# 1. Neutralize process.report trap in detect-libc/lib/process.js
-t1 = b'if (isLinux() && process.report) {'
-r1 = b'if (false && (process.report)) {  '
-assert len(t1) == len(r1), 'Length mismatch for t1'
-assert t1 in content, 'Target t1 not found in app.asar'
-content = content.replace(t1, r1, 1)
+    # 1. Neutralize process.report trap in detect-libc/lib/process.js
+    t1 = b'if (isLinux() && process.report) {'
+    r1 = b'if (false && (process.report)) {  '
+    assert len(t1) == len(r1), 'Length mismatch for t1'
+    assert t1 in content, 'Target t1 not found in app.asar'
+    content = content.replace(t1, r1, 1)
 
-# 2. Prevent process.report.getReport() call in detect-libc/lib/process.js
-t2 = b'report = process.report.getReport();'
-r2 = b'report = {};                        '
-assert len(t2) == len(r2), 'Length mismatch for t2'
-assert t2 in content, 'Target t2 not found in app.asar'
-content = content.replace(t2, r2, 1)
+    # 2. Prevent process.report.getReport() call in detect-libc/lib/process.js
+    t2 = b'report = process.report.getReport();'
+    r2 = b'report = {};                        '
+    assert len(t2) == len(r2), 'Length mismatch for t2'
+    assert t2 in content, 'Target t2 not found in app.asar'
+    content = content.replace(t2, r2, 1)
 
-# 3. Short-circuit familyFromReport in detect-libc/lib/detect-libc.js to return GLIBC immediately
-t3 = b'const familyFromReport = () => {\n  const report = getReport();'
-r3 = b'const familyFromReport = () => {\n  return GLIBC;              '
-assert len(t3) == len(r3), 'Length mismatch for t3'
-assert t3 in content, 'Target t3 not found in app.asar'
-content = content.replace(t3, r3, 1)
+    # 3. Short-circuit familyFromReport in detect-libc/lib/detect-libc.js to return GLIBC immediately
+    t3 = b'const familyFromReport = () => {\n  const report = getReport();'
+    r3 = b'const familyFromReport = () => {\n  return GLIBC;              '
+    assert len(t3) == len(r3), 'Length mismatch for t3'
+    assert t3 in content, 'Target t3 not found in app.asar'
+    content = content.replace(t3, r3, 1)
 
-with open(asar_path, 'wb') as f:
-    f.write(content)
-print('Successfully patched detect-libc inside app.asar')
-"
+    with open(asar_path, 'wb') as f:
+        f.write(content)
+    print('Successfully patched detect-libc inside app.asar')
+    "
 
-    runHook postInstall
+        runHook postInstall
   '';
 
   preFixup = ''
     gappsWrapperArgs+=(
-      --prefix PATH : ${lib.makeBinPath [ xdg-utils git diffutils bubblewrap stdenv.cc.libc.bin ]}
+      --prefix PATH : ${
+        lib.makeBinPath [
+          xdg-utils
+          git
+          diffutils
+          bubblewrap
+          stdenv.cc.libc.bin
+        ]
+      }
       --prefix XDG_DATA_DIRS : "${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}"
       --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}"
-      --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
-      --set NIX_SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
+      --set-default SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
+      --set-default NIX_SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
       --set-default GTK_USE_PORTAL 1
       --set-default CODEX_CLI_PATH "$out/lib/chatgpt/resources/codex"
       --set-default CODEX_ELECTRON_RESOURCES_PATH "$out/lib/chatgpt/resources"
-      --add-flags "--ozone-platform=wayland --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
-      --run 'if [ -f "$HOME/.codex/config.toml" ] && [ -w "$HOME/.codex/config.toml" ]; then ${gnused}/bin/sed -i -E "s|/nix/store/[a-z0-9]+-chatgpt-desktop-[^/]+|'"$out"'|g" "$HOME/.codex/config.toml"; fi'
+      --add-flags "--ozone-platform=auto --password-store=gnome-libsecret"
     )
 
     # autoPatchelfHook runs in postFixupHooks and corrupts static-pie binaries.
@@ -257,6 +271,7 @@ print('Successfully patched detect-libc inside app.asar')
     $out/lib/chatgpt/resources/tectonic/tectonic --version
     $out/lib/chatgpt/resources/codex-code-mode-host --help
     $out/lib/chatgpt/resources/cua_node/bin/node --version
+    $out/lib/chatgpt/resources/cua_node/bin/node -e 'require("node:child_process").execFileSync(process.execPath, ["--version"], { stdio: "inherit" });'
     $out/lib/chatgpt/resources/cua_node/bin/node_repl --help
     echo "Install checks passed successfully!"
   '';
@@ -265,6 +280,7 @@ print('Successfully patched detect-libc inside app.asar')
     description = "Official ChatGPT Linux desktop application by OpenAI";
     homepage = "https://chatgpt.com";
     license = licenses.unfree;
+    sourceProvenance = [ sourceTypes.binaryNativeCode ];
     platforms = [ "x86_64-linux" ];
     mainProgram = "chatgpt";
   };

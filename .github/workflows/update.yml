@@ -1,84 +1,135 @@
 name: Check & Update Upstream
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/update.yml
+      - scripts/update.py
   schedule:
-    - cron: '30 4 * * 1' # Every Monday at 04:30 UTC
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+    - cron: '47 4 * * 1' # Monday, 10:17 IST (GitHub may delay scheduled runs)
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   update:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      NIXPKGS_ALLOW_UNFREE: 1
-
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      has_update: ${{ steps.check.outputs.has_update }}
+      candidate_artifact_id: ${{ steps.candidate.outputs.artifact-id }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable unprivileged user namespaces for Bubblewrap
+        with:
+          persist-credentials: false
+
+      - name: Enable user namespaces for the runtime sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Check upstream OpenAI package
-        id: check
+      - name: Install headless desktop test tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth dbus-x11
+
+      - name: Test update selection
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Refresh official Nixpkgs pin on the first Monday of the month
         run: |
           set -euo pipefail
-          DEB_URL="https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb"
-
-          echo "Prefetching latest deb..."
-          STORE_PATH=$(nix-prefetch-url --print-path "$DEB_URL" | tail -n1)
-          SRI_HASH=$(nix hash file "$STORE_PATH")
-
-          # Extract version from Debian package control metadata
-          UPSTREAM_VER=$(dpkg-deb -f "$STORE_PATH" Version)
-
-          # Read current version from package.nix
-          CURRENT_VER=$(grep -oP 'version\s*=\s*"\K[^"]+' package.nix)
-          CURRENT_HASH=$(grep -oP 'hash\s*=\s*"\K[^"]+' package.nix)
-
-          echo "Current version: $CURRENT_VER ($CURRENT_HASH)"
-          echo "Upstream version: $UPSTREAM_VER ($SRI_HASH)"
-
-          if [ "$CURRENT_VER" = "$UPSTREAM_VER" ] && [ "$CURRENT_HASH" = "$SRI_HASH" ]; then
-            echo "Already up to date."
-            echo "has_update=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "New upstream release detected: $UPSTREAM_VER"
-            echo "has_update=true" >> "$GITHUB_OUTPUT"
-            echo "version=$UPSTREAM_VER" >> "$GITHUB_OUTPUT"
-            echo "sri_hash=$SRI_HASH" >> "$GITHUB_OUTPUT"
+          if (( 10#$(date -u +%d) <= 7 )); then
+            nix flake update nixpkgs
           fi
 
-      - name: Update package.nix and test build
+      - name: Check official APT feed and update pin
+        id: check
+        run: python3 scripts/update.py --candidate candidate.json --include-lock
+
+      # Capture the pins before any downloaded application is executed.
+      # Publication still depends on every later check succeeding.
+      - name: Capture immutable candidate metadata
+        id: candidate
         if: steps.check.outputs.has_update == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate
+          path: candidate.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Validate workflow and shell syntax
+        run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck -c sh -c 'actionlint && shellcheck scripts/*.sh'
+
+      - name: Check Nix formatting
+        run: nix fmt -- --check *.nix
+
+      - name: Check flake, updater, and desktop integration
+        run: nix flake check --print-build-logs
+
+      - name: Build package
+        run: nix build .#default --print-build-logs
+
+      - name: Check packaged runtime
+        run: bash scripts/check-runtime.sh
+
+      - name: Check X11 window identity
+        run: nix shell --inputs-from . nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -a dbus-run-session -- python3 scripts/check-x11.py
+
+      - name: Check Wayland window identity
+        run: nix shell --inputs-from . nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py
+
+      - name: Report validation failure
+        if: failure()
+        run: echo '## Update blocked — validation failed; no package update was published. See the failed step above.' >> "$GITHUB_STEP_SUMMARY"
+
+  # The job that executes downloaded application code has no repository write
+  # permission. Only this fresh runner can publish audited package and official Nixpkgs pins.
+  publish:
+    needs: update
+    if: needs.update.result == 'success' && needs.update.outputs.has_update == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the exact validated base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download validated metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.update.outputs.candidate_artifact_id }}
+          merge-multiple: true
+          path: candidate
+
+      - name: Apply audited package and Nixpkgs pins
+        id: apply
+        run: python3 scripts/update.py --apply-candidate candidate/candidate.json
+
+      - name: Commit and push validated update
+        env:
+          NEW_VERSION: ${{ steps.apply.outputs.version }}
         run: |
-          NEW_VER="${{ steps.check.outputs.version }}"
-          NEW_HASH="${{ steps.check.outputs.sri_hash }}"
-          echo "Updating to version $NEW_VER with hash $NEW_HASH"
-
-          sed -i -E "s/version = \"[^\"]+\";/version = \"$NEW_VER\";/" package.nix
-          sed -i -E "s|hash = \"sha256-[^\"]+\";|hash = \"$NEW_HASH\";|" package.nix
-
-          echo "Building package..."
-          nix build .#default --impure
-
-          echo "Running health checks..."
-          ./result/bin/chatgpt --version
-          nix shell nixpkgs#bubblewrap -c ./result/lib/chatgpt/resources/codex sandbox -- /bin/sh -c "echo sandbox_ok"
-
-      - name: Commit and push update
-        if: steps.check.outputs.has_update == 'true'
-        run: |
-          NEW_VER="${{ steps.check.outputs.version }}"
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.nix
-          git commit -m "chore(deps): update upstream to v$NEW_VER"
-          git push origin main
+          git add package.nix flake.lock
+          git diff --cached --exit-code --quiet && exit 0
+          git commit -m "chore(deps): validate v${NEW_VERSION} and refresh package pins"
+          # A concurrent change to main causes a normal push rejection; never force.
+          git push origin HEAD:main

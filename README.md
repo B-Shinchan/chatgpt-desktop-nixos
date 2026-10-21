@@ -1,206 +1,132 @@
-<div align="center">
-  <img src="./assets/chatgpt-logo.png" alt="ChatGPT Desktop Logo" width="128" height="128" />
-  <h1>ChatGPT Desktop on NixOS</h1>
-  <p>Official OpenAI ChatGPT Linux desktop application packaged natively for NixOS</p>
+# ChatGPT Desktop for NixOS
 
-  <p>
-    <a href="https://nixos.org"><img src="https://img.shields.io/badge/Nix_Flake-blue?logo=nixos&logoColor=white" alt="Nix Flake" /></a>
-    <a href="https://nixos.org"><img src="https://img.shields.io/badge/Platform-x86__64--linux-lightgrey?logo=linux&logoColor=white" alt="Platform" /></a>
-    <a href="https://wayland.freedesktop.org/"><img src="https://img.shields.io/badge/Wayland-Ready-green?logo=wayland&logoColor=white" alt="Wayland Ready" /></a>
-    <a href="./LICENSE"><img src="https://img.shields.io/badge/Packaging_License-MIT-yellow.svg" alt="License" /></a>
-  </p>
-</div>
+[![Build](https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/ci.yml/badge.svg)](https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/ci.yml)
+[![Upstream updates](https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/update.yml/badge.svg)](https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/update.yml)
 
-Repackaging of OpenAI's official ChatGPT Linux desktop (`.deb`) application for NixOS, featuring out-of-the-box native Wayland rendering, GNOME Keyring Secret Service persistence across Wayland compositors (Niri, Hyprland, Sway), complete FreeDesktop icon theming, sanitized MIME protocol associations, and uncorrupted static-PIE execution for the bundled Codex backend daemon.
+Community packaging of **OpenAI's official Linux application** for NixOS. The application comes from the vendor's Debian repository; this project adapts its runtime and desktop integration for NixOS. It is not an official OpenAI or NixOS project.
 
----
+## Requirements and scope
 
-## Architecture: Problems & Solutions
+- `x86_64-linux` only. This repository does not currently package ARM releases.
+- Nix with the `nix-command` and `flakes` features enabled.
+- A graphical Linux session, working graphics drivers, and a session D-Bus.
+- A running Secret Service provider, such as GNOME Keyring or KeePassXC with Secret Service enabled. The launcher selects `gnome-libsecret`; your login session must unlock the keyring.
+- A working XDG Desktop Portal and the backend recommended by your desktop or compositor for file dialogs and applicable sharing features.
+- A vendor account and any subscription required for the application features you use.
 
-OpenAI distributes the official ChatGPT desktop Linux application as an `x86_64` Debian archive tailored for standard FHS distributions (Ubuntu/Debian). On NixOS, several critical architectural issues arise:
+The package installs standard desktop files and vendor icons for Linux application menus. GNOME, Niri, Hyprland, and other desktops have different portal, keyring, shortcut, and window-grouping behavior. They are not all exercised by CI. Current Electron's automatic display selection is used: native Wayland in an appropriately configured Wayland session, X11 otherwise. Pass `--ozone-platform=x11` when troubleshooting.
 
-### 1. Static-PIE ELF Corruption by `autoPatchelfHook`
-- **Problem**: Upstream bundles static-PIE binaries under `usr/lib/chatgpt/resources/`:
-  - `codex` (the core Codex daemon and CLI)
-  - `codex-code-mode-host` (code execution helper host)
-  - `rg` (bundled Ripgrep binary)
-  - `tectonic/tectonic` (bundled LaTeX compiler)
-  - `cua_node/bin/node_repl` (the Code Mode REPL MCP stdio server used when editing local files and running code)
-  Because static-PIE executables do not contain an ELF interpreter (`.interp`) but have ELF type `ET_DYN`, standard `autoPatchelfHook` treats them as shared libraries. It alters their program headers, inserts a broken `PT_DYNAMIC` segment, and invalidates memory segment offsets. This causes immediate **SIGSEGV (exit code 139)** whenever the Electron app invokes `codex` or `node_repl`, manifesting as the **"Organization Settings"** startup crash or silent crashes during file editing.
-- **Solution**: The derivation caches the uncorrupted static-PIE binaries during `installPhase` and registers a hook into `postFixupHooks` via `preFixup`. This hook executes strictly *after* `autoPatchelfPostFixup`, restoring the original, untouched static binaries. The derivation also runs an `installCheckPhase` during build time to guarantee `codex`, `rg`, `tectonic`, `node`, and `node_repl` execute cleanly without crashes.
+See the [vendor's Linux documentation](https://learn.chatgpt.com/docs/linux/linux-app) for upstream requirements and feature restrictions. This package cannot enable features unavailable in the upstream application or your plan.
 
-### 2. File Chooser, Broken Qt Shims & GSettings Schema Safety
-- **Problem**: Opening a directory or workspace folder prompts GTK/Chromium's file chooser dialog. Chromium attempts to load `libqt5_shim.so` or `libqt6_shim.so` when present, which fail or segfault due to missing Qt libraries on NixOS. Furthermore, on standalone Wayland compositors (Niri, Hyprland, Sway), missing GSettings schemas cause GLib to abort (`GLib-GIO-ERROR: No GSettings schemas are installed on the system`).
-- **Solution**: The derivation completely removes `libqt5_shim.so` and `libqt6_shim.so` in `installPhase`, forces native portal dialogs via `--set-default GTK_USE_PORTAL 1`, and injects `gsettings-desktop-schemas` and `gtk3` schemas directly into `XDG_DATA_DIRS`, ensuring file and folder selection dialogs open reliably without crashing.
+## Try it
 
-### 3. Workspace Git & File Management Integration
-- **Problem**: When attaching local folders or projects to ChatGPT/Codex, the backend relies on `git` and `diff` to discover repository structure, track modifications, and compute unified diffs.
-- **Solution**: The wrapper pre-populates `git` and `diffutils` in runtime `PATH`, ensuring flawless local file editing, Git status tracking, and workspace operations.
-
-### 4. Rogue Browser Protocol Hijacking
-- **Problem**: The upstream `chatgpt.desktop` entry includes `x-scheme-handler/http;` and `x-scheme-handler/https;` in its `MimeType` definition. On many Linux desktop environments, installing the package can hijack the user's default web browser, causing external HTTP/HTTPS links to open inside ChatGPT instead of the browser.
-- **Solution**: The derivation sanitizes the desktop entry by stripping out HTTP and HTTPS scheme handlers, retaining only `x-scheme-handler/chatgpt;` and `x-scheme-handler/codex;`.
-
-### 5. Keyring Failures on Non-GNOME Wayland Compositors
-- **Problem**: On standalone Wayland compositors (Niri, Hyprland, Sway), Electron often fails to discover a Secret Service provider, falling back to an ephemeral memory store and losing user authentication upon closing the app.
-- **Solution**: Enforced `--password-store=gnome-libsecret` via binary wrapper flags, ensuring reliable credential storage backed by standard FreeDesktop Secret Service implementations (`gnome-keyring` or KeePassXC).
-
-### 6. Root TLS / SSL Certificate Trust
-- **Problem**: The bundled `codex` agent server and Electron background services communicate with OpenAI authentication endpoints (`auth.openai.com`) and WebSockets (`chatgpt.com`). On NixOS, standard `/etc/ssl/certs` paths may not exist if not explicitly configured.
-- **Solution**: The wrapper explicitly injects `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE` pointing to `cacert` (`/etc/ssl/certs/ca-bundle.crt`).
-
-### 7. Native Wayland, Hardware Acceleration & Screen Capture
-- **Problem**: Default Electron flags launch under XWayland with blurred window scaling and lack of client-side decorations. Screen sharing via WebRTC requires explicit PipeWire integration on Wayland compositors.
-- **Solution**: Pre-configured flags `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer` ensure crisp native Wayland surfaces and enable screen capture through the XDG Desktop Portal/PipeWire pipeline. `addDriverRunpath` injects dynamic OpenGL/Vulkan driver paths (`libglvnd`, `mesa`).
-
-### 8. Audio & PipeWire Runtime Integration
-- **Problem**: The ChatGPT binary `dlopen`s `libpipewire-0.3.so.0` at runtime for WebRTC audio/video capture. On NixOS, libraries not in the binary's RPATH are invisible to `dlopen`, causing "Unable to open PipeWire library" errors and breaking voice input, screen sharing, and real-time audio features.
-- **Solution**: `pipewire` is injected into `runtimeDependencies`, ensuring its library path is included in the binary's RPATH. Combined with `libpulseaudio` (also a runtime dependency), both PulseAudio and PipeWire audio backends are available for microphone input and speaker output.
-
-### 9. Codex MCP Configuration Auto-Migration
-- **Problem**: On initial startup, Codex generates `~/.codex/config.toml` containing hardcoded absolute store paths to `node_repl`, `codex`, and Node runtime modules (e.g. `command = "/nix/store/...-chatgpt-desktop-.../lib/chatgpt/resources/cua_node/bin/node_repl"`). Whenever the package is rebuilt, updated, or garbage-collected, `config.toml` continues pointing to the old (potentially deleted or broken) Nix store path, causing child process `SIGSEGV` or execution failures when opening workspaces or running Code Mode.
-- **Solution**: The application launcher wrapper automatically detects if `~/.codex/config.toml` exists and rewrites any legacy `/nix/store/*-chatgpt-desktop-*` paths to match the active package store path (`$out`) before the process begins.
-
-### 10. Workspace / Folder Attachment & `@parcel/watcher` `detect-libc` SIGILL Trap
-- **Problem**: Opening local folders or attaching project directories initializes the git repository watcher (`[git-repo-watcher] Starting git repo watcher`), powered by `@parcel/watcher`. `@parcel/watcher` depends on `detect-libc` to decide between `glibc` and `musl` native bindings. On NixOS, because `/usr/bin/ldd` does not exist and the ELF interpreter string is moved outside the initial 2KB header buffer by patchelf, `detect-libc` fell back to calling Node's `process.report.getReport()`. Inside Electron, `process.report.getReport()` hits an unsupported code path that deliberately triggers an immediate abort / illegal instruction (`SIGILL` via `ud1`), crashing the entire application. Additionally, `codex sandbox` failed when `bwrap` (bubblewrap) was missing from the runtime path.
-- **Solution**: The derivation binary-patches `detect-libc` inside `app.asar` during `installPhase` to neutralize the `process.report` trap, bypass `process.report.getReport()`, and short-circuit `familyFromReport()` to return `GLIBC` immediately. Furthermore, `bubblewrap` and `stdenv.cc.libc.bin` (`getconf`, `ldd`) are injected into the runtime `PATH` wrapper, ensuring the Codex sandbox probe passes and local folders attach cleanly without termination.
-
-### 11. Complete FreeDesktop Icon Theming & Wayland Window Association
-- **Problem**: Upstream only bundles a single raw 1024x1024 PNG image under `/usr/share/pixmaps/`. Standard FreeDesktop icon loaders (`GtkIconTheme`, `Qt`, GNOME Shell, Niri, Waybar, Rofi) index standard resolutions (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`, `128x128`, `256x256`, `512x512`) from `hicolor-icon-theme` and ignore unindexed 1024px directories. Furthermore, Wayland assigns the window `app_id` as `"Chatgpt"`, which failed to match the lowercase `chatgpt.desktop` without `StartupWMClass`, causing missing or generic fallback icons on GNOME and Niri.
-- **Solution**: The derivation generates a complete suite of Lanczos-resampled icons across all standard FreeDesktop resolutions (`16x16` through `512x512`, plus `1024x1024`) with aliases (`chatgpt`, `Chatgpt`, `ChatGPT`, `com.openai.chatgpt`). It also injects `StartupWMClass=Chatgpt` into `chatgpt.desktop` and installs case-insensitive desktop entry symlinks, ensuring instant recognition in application menus, docks, window switchers, and Wayland compositor titlebars.
-
----
-
-## Feature Matrix
-
-| Feature | Status | Implementation Details |
-| :--- | :---: | :--- |
-| **Core Desktop Chat** | **Supported** | Full Electron runtime parity with the official `.deb` release. |
-| **Official Desktop & Window Icons** | **Supported** | Complete FreeDesktop `hicolor` hierarchy (16px to 1024px); `StartupWMClass=Chatgpt` matching for Niri & GNOME. |
-| **Codex Daemon (`app-server`)** | **Supported** | Pristine static-PIE execution; avoids patchelf memory layout corruption. |
-| **Code Mode REPL (`node_repl`)** | **Supported** | Bundled MCP stdio server preserved intact for code execution and file editing. |
-| **Workspace & Folder Attachment** | **Supported** | Neutralized `detect-libc` SIGILL trap; bundled `bubblewrap` and `git`/`diffutils` for file watching and sandbox isolation. |
-| **Folder & File Pickers** | **Supported** | Broken Qt shims removed; `GTK_USE_PORTAL=1` enforced; GSettings schemas in `XDG_DATA_DIRS`. |
-| **Config Store Path Auto-Migration** | **Supported** | Launcher auto-migrates `~/.codex/config.toml` Nix store paths across package updates. |
-| **Workspace Git Integration** | **Supported** | `git` and `diffutils` bundled in runtime `PATH` for project tracking. |
-| **LaTeX Compilation (`tectonic`)** | **Supported** | Bundled static Tectonic compiler verified and functional. |
-| **Native Wayland & DMA-BUF** | **Supported** | Configured with `--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer`. |
-| **Screen Sharing (WebRTC)** | **Supported** | PipeWire capturer enabled; `libpipewire-0.3.so.0` injected via `runtimeDependencies`; XDG Desktop Portal integration. |
-| **Voice / Microphone Input** | **Supported** | `libpulseaudio` and `pipewire` in runtime RPATH for PulseAudio/PipeWire audio backend discovery. |
-| **OAuth `chatgpt://` Callbacks** | **Supported** | Registered via desktop integration; `xdg-utils` injected into runtime `PATH`. |
-| **Secret Storage Persistence** | **Supported** | FreeDesktop Secret Service integration via `--password-store=gnome-libsecret`. |
-| **Browser Security (No Hijack)** | **Supported** | Stripped rogue `http`/`https` scheme handlers; default web browser remains intact. |
-| **TLS/SSL Certificate Trust** | **Supported** | Root certificates provisioned via Nixpkgs `cacert` (`SSL_CERT_FILE`). |
-| **Hardware Video & Graphics** | **Supported** | Driver runpaths injected via `addDriverRunpath` (`libglvnd`, `mesa`). |
-
----
-
-## Quickstart / Ad-hoc Usage
-
-Execute directly without modifying your system configuration:
-
-```bash
+```sh
 nix run github:B-Shinchan/chatgpt-desktop-nixos
 ```
 
-Or test in a temporary shell:
+For a temporary shell:
 
-```bash
+```sh
 nix shell github:B-Shinchan/chatgpt-desktop-nixos -c chatgpt
 ```
 
----
+These commands provide the executable for that invocation. Install declaratively for persistent application-menu and URI-handler integration.
 
-## Declarative NixOS Integration
+## Install with a system flake
 
-### 1. Flake Inputs
-Add `chatgpt-desktop-nixos` to your system `flake.nix`:
+Add the repository to your existing flake's `inputs` and pass `inputs` to your NixOS modules using `specialArgs`. The following shows the relevant structure; keep your existing host modules and settings:
 
 ```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     chatgpt-desktop.url = "github:B-Shinchan/chatgpt-desktop-nixos";
-    # Ensure inputs.chatgpt-desktop.inputs.nixpkgs follows your system nixpkgs if desired:
-    # chatgpt-desktop.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, chatgpt-desktop, ... }: {
-    # System configuration...
+  outputs = inputs@{ nixpkgs, ... }: {
+    nixosConfigurations.YOUR_HOST = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
+      modules = [ ./configuration.nix ];
+    };
   };
 }
 ```
 
-### 2. NixOS Configuration (`configuration.nix`)
-
-Because ChatGPT Desktop contains proprietary binaries from OpenAI, ensure unfree packages are allowed:
+In a NixOS module:
 
 ```nix
-{ pkgs, inputs, ... }:
-
+{ inputs, pkgs, ... }:
 {
-  nixpkgs.config.allowUnfree = true;
-
   environment.systemPackages = [
     inputs.chatgpt-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
-    # Or if using overlays:
-    # pkgs.chatgpt-desktop
-  ];
-
-  # Optional: Overlay method
-  # nixpkgs.overlays = [ inputs.chatgpt-desktop.overlays.default ];
-
-  # Required for credential persistence on standalone Wayland compositors:
-  services.gnome.gnome-keyring.enable = true;
-  security.pam.services.login.enableGnomeKeyring = true;
-}
-```
-
-> **Note on Desktop Integration & MIME Callbacks:**  
-> When installed via `environment.systemPackages`, NixOS automatically links the `.desktop` file and registers the `x-scheme-handler/chatgpt` and `x-scheme-handler/codex` MIME associations system-wide.
-
-### 3. Home Manager (`home.nix`)
-
-```nix
-{ pkgs, inputs, ... }:
-
-{
-  home.packages = [
-    inputs.chatgpt-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 }
 ```
 
----
+The flake's package set explicitly permits the proprietary application. If you use `overlays.default` instead, permit the unfree package in your own Nixpkgs configuration. The overlay provides `pkgs.chatgpt-desktop`.
 
-## Troubleshooting & Gotchas
+For Home Manager, pass `inputs` through `extraSpecialArgs` (or `home-manager.extraSpecialArgs` in a NixOS integration), then put the same package expression in `home.packages`.
 
-### 1. OAuth Sign-In Not Redirecting
-If clicking "Sign In" in your browser fails to redirect back into the ChatGPT app:
-1. Verify the MIME registration:
-   ```bash
-   xdg-mime query default x-scheme-handler/chatgpt
-   ```
-   *Expected output*: `chatgpt.desktop`
-2. If unset, manually set the default scheme handler:
-   ```bash
-   xdg-mime default chatgpt.desktop x-scheme-handler/chatgpt
-   xdg-mime default chatgpt.desktop x-scheme-handler/codex
-   ```
+Both standalone installation methods use this repository's `flake.lock`. You may set `chatgpt-desktop.inputs.nixpkgs.follows = "nixpkgs"` to share your system's package set, but that dependency combination is not the exact one checked by this repository's CI.
 
-### 2. Session Lost on App Restart
-If you find yourself logged out every time the application is closed:
-- Ensure a Secret Service provider (`gnome-keyring` or KeePassXC with Freedesktop Secret Service enabled) is running in your session.
-- Under standalone Wayland compositors (Niri, Hyprland, Sway), ensure the keyring daemon is initialized in your startup config:
-  ```bash
-  dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
-  gnome-keyring-daemon --start --components=secrets
-  ```
+## Desktop integration and troubleshooting
 
----
+The application-menu name is **ChatGPT**. The desktop file is `chatgpt.desktop`, the icon theme name is `chatgpt`, and the executable is `chatgpt`. Desktop action commands also point to the packaged launcher. Installing the package advertises its supported URI schemes; it does not guarantee your desktop selects it as the default handler.
 
-## Legal & Disclaimers
+Check browser sign-in callbacks:
 
-- **Packaging Code**: Licensed under the [MIT License](./LICENSE).
-- **Trademarks & Binaries**: **OpenAI**, **ChatGPT**, and **Codex** are trademarks or registered trademarks of **OpenAI, Inc.**
-- This repository is an independent community packaging effort and is neither affiliated with nor endorsed by OpenAI.
+```sh
+xdg-mime query default x-scheme-handler/chatgpt
+# If no appropriate handler is selected:
+xdg-mime default chatgpt.desktop x-scheme-handler/chatgpt
+xdg-mime default chatgpt.desktop x-scheme-handler/codex
+```
+
+If the application is missing from your menu, start a new desktop session after declarative installation. Duplicate entries may come from older manually installed desktop files in `~/.local/share/applications`; inspect them before removing anything. The package does not register itself as a handler for ordinary HTTP or HTTPS links.
+
+For login persistence, verify that a Secret Service provider is running and unlocked. On a standalone compositor, configure keyring startup and PAM unlocking for your actual login method. GNOME normally supplies this session integration. For file-dialog or sharing problems, check your compositor's portal configuration and D-Bus environment. Packaging the libraries alone cannot provide a correctly configured desktop session.
+
+For display problems, try:
+
+```sh
+chatgpt --ozone-platform=x11
+```
+
+X11 fallback requires X11/XWayland support. Native Wayland requires a working Wayland session. CI checks a headless X11 launch and a real Wayland surface/application ID in private Weston; it does not certify live Wayland window grouping, rendering, authentication, audio, screen sharing, or subscription-dependent features.
+
+The package preserves selected bundled static helper executables, retains the vendor's custom Node runtime with ELF header ordering preserved, checks helper startup and Node child-process execution during installation, and applies a size-preserving `detect-libc` compatibility patch inside `app.asar`. A changed upstream patch target intentionally fails the build. This remains a vendor-specific workaround, not an upstream-supported modification.
+
+The launcher no longer rewrites `~/.codex/config.toml`. If an older installation left absolute paths to a previous `/nix/store/...-chatgpt-desktop-...` directory there, back up the file and review the affected helper settings before garbage-collecting that old package. Avoid replacing unrelated configuration or copying account credentials into bug reports.
+
+## Automatic updates
+
+Every **Monday at 10:17 IST**, GitHub Actions checks OpenAI's stable amd64 APT feed. GitHub may start scheduled jobs late. Changes to the updater also start a check, and maintainers can use **Actions → Check & Update Upstream → Run workflow**.
+
+The update process:
+
+1. Selects the highest Debian version for the exact package and architecture, validates its download layout, and records its SHA256. It rejects downgrades and conflicting metadata, and detects a changed archive hash for the same version.
+2. Evaluates and builds the candidate against the locked Nixpkgs revision. It runs updater tests, desktop-file/icon checks, formatting/workflow checks, an isolated headless version check, X11 window-class matching, and a headless Wayland window/identity check, plus the bundled Codex sandbox write-isolation check.
+3. On the first Monday of each month, also refreshes the official NixOS/Nixpkgs lock pin and validates that candidate with the same checks.
+4. After every check succeeds, a separate fresh job reconstructs only the validated version/hash and restricted Nixpkgs lock changes and commits them to `main` as `github-actions[bot]`. Only this job has repository write permission.
+
+A failed candidate is not published. The failed Actions step and job summary explain the failure. Unchanged releases produce no package commit. Action dependencies are pinned to exact commits; Dependabot proposes weekly updates to those pins for security review.
+
+This automates routine application releases, not every future packaging change. Vendor layout, dependency, patch, API, or licensing changes can require maintenance. Nixpkgs inputs are pinned between the monthly validated refreshes. The publisher rejects a lock candidate that changes another input, changes the NixOS repository, moves the pin timestamp backwards, or changes the input graph. GitHub can disable schedules after 60 days without repository activity, and service/account limits can interrupt jobs.
+
+Users receive repository updates when they refresh their own flake lock and rebuild or update their profile. For example, from the system flake directory:
+
+```sh
+nix flake update chatgpt-desktop
+sudo nixos-rebuild switch --flake .#YOUR_HOST
+```
+
+## Development and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks, contributions, and the remaining work before a potential Nixpkgs submission. See [SECURITY.md](SECURITY.md) for trust boundaries, maintenance limits, and branch-protection guidance.
+
+The automated checks exercise the packaging and selected runtime behavior. They are not a complete graphical test matrix, a vendor-binary security audit, or proof of a reproducible upstream build.
+
+## License and attribution
+
+The packaging code is [MIT-licensed](LICENSE). The application, bundled components, names, and logos remain subject to their respective vendor licenses and trademark rights. Packaging does not grant permission to redistribute proprietary binaries. This project is not affiliated with or endorsed by OpenAI.
