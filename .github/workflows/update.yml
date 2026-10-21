@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       has_update: ${{ steps.check.outputs.has_update }}
+      publish_required: ${{ steps.check.outputs.has_update == 'true' || github.event_name == 'push' }}
       candidate_artifact_id: ${{ steps.candidate.outputs.artifact-id }}
     steps:
       - name: Checkout repository
@@ -59,10 +60,12 @@ jobs:
         run: python3 scripts/update.py --candidate candidate.json --include-lock
 
       # Capture the pins before any downloaded application is executed.
-      # Publication still depends on every later check succeeding.
+      # Publication still depends on every later check succeeding. Updater
+      # changes exercise the artifact/publish handoff even with unchanged pins;
+      # the publisher then exits without creating a commit.
       - name: Capture immutable candidate metadata
         id: candidate
-        if: steps.check.outputs.has_update == 'true'
+        if: steps.check.outputs.has_update == 'true' || github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate
@@ -99,7 +102,7 @@ jobs:
   # permission. Only this fresh runner can publish audited package and official Nixpkgs pins.
   publish:
     needs: update
-    if: needs.update.result == 'success' && needs.update.outputs.has_update == 'true'
+    if: needs.update.result == 'success' && needs.update.outputs.publish_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -116,6 +119,9 @@ jobs:
           artifact-ids: ${{ needs.update.outputs.candidate_artifact_id }}
           merge-multiple: true
           path: candidate
+
+      - name: Verify push access without changing the repository
+        run: git push --dry-run origin HEAD:main
 
       - name: Apply audited package and Nixpkgs pins
         id: apply
