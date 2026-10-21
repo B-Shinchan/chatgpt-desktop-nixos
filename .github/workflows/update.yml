@@ -5,7 +5,8 @@ on:
     branches: [main]
     paths:
       - .github/workflows/update.yml
-      - scripts/update.py
+      - scripts/**
+      - tests/**
   schedule:
     - cron: '47 4 * * 1' # Monday, 10:17 IST (GitHub may delay scheduled runs)
   workflow_dispatch:

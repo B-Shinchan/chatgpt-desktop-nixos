@@ -28,10 +28,14 @@ def stop(process):
 def main():
     cache = ROOT / ".cache"
     cache.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="wayland-test-", dir=cache) as temporary:
+    # Unix sockets have a short path limit, including on long CI workspaces.
+    with (
+        tempfile.TemporaryDirectory(prefix="wayland-test-", dir=cache) as temporary,
+        tempfile.TemporaryDirectory(prefix="wl-", dir="/tmp") as runtime_directory,
+    ):
         base = Path(temporary)
-        runtime = base / "runtime"
-        runtime.mkdir(mode=0o700)
+        runtime = Path(runtime_directory)
+        runtime.chmod(0o700)
         # Do not inherit account/API credentials or the user's graphical session.
         env = {
             key: value

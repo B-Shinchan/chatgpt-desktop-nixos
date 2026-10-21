@@ -36,6 +36,8 @@ Please test graphical changes in the affected desktop session. A headless versio
 
 ## Potential Nixpkgs submission
 
+Nixpkgs already provides `pkgs.chatgpt` in the dependency revision tested here. Future upstream contribution should improve that existing package rather than introduce a duplicate. This repository retains its own tested packaging and update pipeline.
+
 `package.nix` uses `callPackage`, explicit dependencies, fixed-output fetching, unfree licensing, and binary source provenance. These are foundations, not evidence of Nixpkgs acceptance. Before a submission, check whether an equivalent package already exists, identify an active Nixpkgs maintainer, review vendor terms and redistribution permissions, move to the appropriate `pkgs/by-name` layout, and follow current Nixpkgs review and update-script conventions. Explain and minimize the vendor-specific binary patches and wrappers. Keep the GUI/FHS runtime requirements and remaining test limitations explicit.
 
 The vendor application is precompiled proprietary software. Pinning it makes the input identifiable; it does not make the vendor's build reproducible from source or establish that it is free of vulnerabilities.
