@@ -52,7 +52,15 @@ jobs:
         run: bash scripts/check-runtime.sh
 
       - name: Check X11 window identity
-        run: nix shell --inputs-from . nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -a dbus-run-session -- python3 scripts/check-x11.py
+        run: |
+          mkdir -p .cache
+          if nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session -- python3 scripts/check-x11.py > .cache/x11-ci.log 2>&1; then
+            cat .cache/x11-ci.log
+          else
+            cat .cache/x11-ci.log
+            python3 -c 'import pathlib; message = pathlib.Path(".cache/x11-ci.log").read_text(errors="replace")[-4000:]; print("::error::" + message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+            exit 1
+          fi
 
       - name: Check Wayland window identity
-        run: nix shell --inputs-from . nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py
+        run: nix shell --inputs-from . nixpkgs#python3 nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py
