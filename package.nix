@@ -238,7 +238,7 @@ stdenv.mkDerivation (finalAttrs: {
       --set-default GTK_USE_PORTAL 1
       --set-default CODEX_CLI_PATH "$out/lib/chatgpt/resources/codex"
       --set-default CODEX_ELECTRON_RESOURCES_PATH "$out/lib/chatgpt/resources"
-      --add-flags "--ozone-platform=auto --password-store=gnome-libsecret"
+      --add-flags "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --password-store=gnome-libsecret"
     )
 
     # autoPatchelfHook runs in postFixupHooks and corrupts static-pie binaries.
