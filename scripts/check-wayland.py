@@ -91,7 +91,6 @@ def main():
                             f"--config-file={ROOT / 'tests/dbus-session.conf'}",
                             "--",
                             str(ROOT / "result/bin" / PROGRAM),
-                            "--ozone-platform=wayland",
                             "--disable-gpu",
                             "--password-store=basic",
                             f"--user-data-dir={base / 'profile'}",

@@ -38,7 +38,6 @@ def main():
             application = subprocess.Popen(
                 [
                     str(ROOT / "result/bin" / PROGRAM),
-                    "--ozone-platform=x11",
                     "--disable-gpu",
                     "--password-store=basic",
                     f"--user-data-dir={home / 'profile'}",
