@@ -116,6 +116,10 @@ stdenv.mkDerivation (finalAttrs: {
     pipewire
   ];
 
+  appendRunpaths = [
+    "${addDriverRunpath.driverLink}/lib"
+  ];
+
   autoPatchelfIgnoreMissingDeps = [
     "libc.musl-x86_64.so.1"
   ];
