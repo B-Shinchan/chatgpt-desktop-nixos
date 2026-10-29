@@ -1,0 +1,27 @@
+name: Upstream Update Request
+description: Report that a new official upstream Debian release of ChatGPT Desktop is available
+labels: ["upstream-update"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenAI's official APT feed is checked automatically every Monday via GitHub Actions. If a release has been available in the repository for more than 7 days, please report it here.
+  - type: input
+    id: upstream_version
+    attributes:
+      label: New Upstream Version
+      placeholder: "e.g., 26.1030.51500"
+    validations:
+      required: true
+  - type: input
+    id: source_url
+    attributes:
+      label: Official Source Link
+      placeholder: "https://learn.chatgpt.com/docs/linux/linux-app"
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Release Notes & Breaking Changes
+      description: Any notable changes in binary layout or bundled helpers?

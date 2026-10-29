@@ -138,7 +138,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks, contributions, and the 
 
 The automated checks exercise the packaging and selected runtime behavior. They are not a complete graphical test matrix, a vendor-binary security audit, or proof of a reproducible upstream build.
 
-## Companion applications
+## Companion Applications
 
 This package is part of a suite of official vendor AI applications packaged for NixOS:
 

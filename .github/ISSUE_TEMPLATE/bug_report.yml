@@ -1,0 +1,77 @@
+name: Bug Report
+description: Report a packaging, installation, or runtime issue with ChatGPT Desktop on NixOS
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please verify you are running the latest commit of this flake and note that account or subscription issues belong with OpenAI support.
+  - type: input
+    id: version
+    attributes:
+      label: Package Version
+      description: What version of ChatGPT Desktop are you running? (e.g., 26.1023.51421 or git commit hash)
+      placeholder: "26.1023.51421"
+    validations:
+      required: true
+  - type: input
+    id: nixos_version
+    attributes:
+      label: NixOS Version
+      description: Run `nixos-version` and paste the output here.
+      placeholder: "24.11 / unstable (x86_64-linux)"
+    validations:
+      required: true
+  - type: dropdown
+    id: session_type
+    attributes:
+      label: Display Server & Compositor
+      description: Which display environment are you running?
+      options:
+        - "Wayland (Niri)"
+        - "Wayland (GNOME Shell)"
+        - "Wayland (KDE Plasma)"
+        - "Wayland (Hyprland / Sway)"
+        - "X11"
+        - "Other"
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation Method
+      description: How did you install or run the application?
+      options:
+        - "NixOS Flake (environment.systemPackages)"
+        - "Home Manager (home.packages)"
+        - "Nixpkgs Overlay"
+        - "Imperative (nix profile install)"
+        - "Ad-hoc (nix run)"
+    validations:
+      required: true
+  - type: input
+    id: secret_service
+    attributes:
+      label: Secret Service Provider
+      description: What keyring backend is running? (e.g., GNOME Keyring, KeePassXC with Secret Service)
+      placeholder: "GNOME Keyring"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can someone reproduce this problem?
+      placeholder: |
+        1. Add flake input ...
+        2. Rebuild with ...
+        3. Launch `chatgpt`
+        4. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs & Terminal Output
+      description: Paste terminal output, error backtraces, or journalctl logs. Please sanitize personal tokens, conversation contents, or email addresses.
+      render: shell
