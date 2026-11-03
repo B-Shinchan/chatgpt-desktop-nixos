@@ -6,6 +6,7 @@
   <p>
     <a href="https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/ci.yml"><img src="https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
     <a href="https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/update.yml"><img src="https://github.com/B-Shinchan/chatgpt-desktop-nixos/actions/workflows/update.yml/badge.svg" alt="Upstream updates" /></a>
+    <a href="https://github.com/B-Shinchan/chatgpt-desktop-nixos/releases"><img src="https://img.shields.io/github/v/release/B-Shinchan/chatgpt-desktop-nixos?logo=github&label=Release" alt="Latest Release" /></a>
     <a href="https://nixos.org"><img src="https://img.shields.io/badge/Nix_Flake-blue?logo=nixos&logoColor=white" alt="Nix Flake" /></a>
     <a href="https://wayland.freedesktop.org/"><img src="https://img.shields.io/badge/Wayland-Ready-green?logo=wayland&logoColor=white" alt="Wayland Ready" /></a>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/Packaging_License-MIT-yellow.svg" alt="License" /></a>
@@ -132,6 +133,30 @@ nix flake update chatgpt-desktop
 sudo nixos-rebuild switch --flake .#YOUR_HOST
 ```
 
+## Version management & pinning
+
+This repository publishes structured [GitHub Releases](https://github.com/B-Shinchan/chatgpt-desktop-nixos/releases) tracking each upstream OpenAI release.
+
+### Understanding versions
+
+1. **Upstream Application Version**: The official version released by OpenAI (e.g., `26.1027.51404`).
+2. **Nix Package Version**: Declared in `package.nix` (`version = "26.1027.51404"`) and exposed via Flake outputs (`packages.x86_64-linux.default.version`).
+3. **GitHub Packaging Release**: Git tags formatted as `v<UPSTREAM_VERSION>` (e.g., `v26.1027.51404`). Packaging-only fixes use `v<UPSTREAM_VERSION>-<REVISION>` (e.g., `v26.1027.51404-1`).
+
+### Pinning a specific release
+
+By default, referencing `github:B-Shinchan/chatgpt-desktop-nixos` tracks the latest release on `main`. To pin an exact validated version in your `flake.nix`:
+
+```nix
+inputs.chatgpt-desktop.url = "github:B-Shinchan/chatgpt-desktop-nixos/v26.1027.51404";
+```
+
+To update pinned inputs:
+
+```bash
+nix flake update chatgpt-desktop
+```
+
 ## Development and security
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks, contributions, and the remaining work before a potential Nixpkgs submission. See [SECURITY.md](SECURITY.md) for trust boundaries, maintenance limits, and branch-protection guidance.
@@ -146,7 +171,7 @@ This package is part of a suite of official vendor AI applications packaged for 
 | :--- | :--- | :--- |
 | **ChatGPT Desktop** | `chatgpt` | [chatgpt-desktop-nixos](https://github.com/B-Shinchan/chatgpt-desktop-nixos) |
 | **Claude Desktop** | `claude-desktop` | [claude-desktop-nixos](https://github.com/B-Shinchan/claude-desktop-nixos) |
-| **Google Antigravity IDE** | `antigravity-ide` | [antigravity-nixos](https://github.com/B-Shinchan/antigravity-nixos) |
+| **Google Antigravity IDE** | `antigravity-ide` | [antigravity-ide-nixos](https://github.com/B-Shinchan/antigravity-ide-nixos) |
 | **Google Antigravity Hub** | `antigravity-hub` | [antigravity-hub-nixos](https://github.com/B-Shinchan/antigravity-hub-nixos) |
 
 ## License and attribution

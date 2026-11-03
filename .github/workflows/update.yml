@@ -145,6 +145,31 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.nix flake.lock
           git diff --cached --exit-code --quiet && exit 0
-          git commit -m "chore(deps): validate v${NEW_VERSION} and refresh package pins"
-          # A concurrent change to main causes a normal push rejection; never force.
-          git push origin HEAD:main
+
+          if git diff --cached --name-only | grep -q "package.nix"; then
+            echo "VERSION_UPDATED=true" >> "$GITHUB_ENV"
+            git commit -m "chore(deps): validate v${NEW_VERSION} and refresh package pins"
+            TAG="v${NEW_VERSION}"
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              git tag -a "$TAG" -m "Release ChatGPT Desktop $TAG"
+            fi
+            git push origin HEAD:main --tags
+          else
+            echo "VERSION_UPDATED=false" >> "$GITHUB_ENV"
+            git commit -m "chore(flake): update nixpkgs lock pin"
+            git push origin HEAD:main
+          fi
+
+      - name: Generate Release Notes
+        if: env.VERSION_UPDATED == 'true'
+        id: notes
+        run: |
+          python3 scripts/generate-release-notes.py "v${{ steps.apply.outputs.version }}" > release-notes.md
+
+      - name: Create GitHub Release
+        if: env.VERSION_UPDATED == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.apply.outputs.version }}"
+          name: "${{ steps.notes.outputs.title }}"
+          body_path: release-notes.md
