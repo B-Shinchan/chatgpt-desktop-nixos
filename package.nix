@@ -146,7 +146,10 @@ stdenv.mkDerivation (finalAttrs: {
         cp -a usr/lib/chatgpt/resources/codex "$TMPDIR/static-binaries/codex"
         cp -a usr/lib/chatgpt/resources/codex-code-mode-host "$TMPDIR/static-binaries/codex-code-mode-host"
         cp -a usr/lib/chatgpt/resources/rg "$TMPDIR/static-binaries/rg"
-        cp -a usr/lib/chatgpt/resources/tectonic/tectonic "$TMPDIR/static-binaries/tectonic"
+        # Some upstream releases omit the bundled Tectonic helper.
+        if [ -e usr/lib/chatgpt/resources/tectonic/tectonic ]; then
+          cp -a usr/lib/chatgpt/resources/tectonic/tectonic "$TMPDIR/static-binaries/tectonic"
+        fi
         cp -a usr/lib/chatgpt/resources/cua_node/bin/node_repl "$TMPDIR/static-binaries/node_repl"
 
         # Install desktop entry
@@ -252,10 +255,12 @@ stdenv.mkDerivation (finalAttrs: {
       cp -fa "$TMPDIR/static-binaries/codex" "$out/lib/chatgpt/resources/codex"
       cp -fa "$TMPDIR/static-binaries/codex-code-mode-host" "$out/lib/chatgpt/resources/codex-code-mode-host"
       cp -fa "$TMPDIR/static-binaries/rg" "$out/lib/chatgpt/resources/rg"
-      cp -fa "$TMPDIR/static-binaries/tectonic" "$out/lib/chatgpt/resources/tectonic/tectonic"
+      if [ -e "$TMPDIR/static-binaries/tectonic" ]; then
+        cp -fa "$TMPDIR/static-binaries/tectonic" "$out/lib/chatgpt/resources/tectonic/tectonic"
+        chmod +x "$out/lib/chatgpt/resources/tectonic/tectonic"
+      fi
       cp -fa "$TMPDIR/static-binaries/node_repl" "$out/lib/chatgpt/resources/cua_node/bin/node_repl"
       chmod +x $out/lib/chatgpt/resources/{codex,codex-code-mode-host,rg}
-      chmod +x $out/lib/chatgpt/resources/tectonic/tectonic
       chmod +x $out/lib/chatgpt/resources/cua_node/bin/node_repl
     }
     postFixupHooks+=(restoreStaticBinaries)
@@ -272,7 +277,9 @@ stdenv.mkDerivation (finalAttrs: {
     echo "Running install checks..."
     $out/lib/chatgpt/resources/codex --version
     $out/lib/chatgpt/resources/rg --version
-    $out/lib/chatgpt/resources/tectonic/tectonic --version
+    if [ -e "$out/lib/chatgpt/resources/tectonic/tectonic" ]; then
+      "$out/lib/chatgpt/resources/tectonic/tectonic" --version
+    fi
     $out/lib/chatgpt/resources/codex-code-mode-host --help
     $out/lib/chatgpt/resources/cua_node/bin/node --version
     $out/lib/chatgpt/resources/cua_node/bin/node -e 'require("node:child_process").execFileSync(process.execPath, ["--version"], { stdio: "inherit" });'
