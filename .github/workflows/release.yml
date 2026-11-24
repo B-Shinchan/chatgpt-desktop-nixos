@@ -22,8 +22,9 @@ jobs:
 
       - name: Generate Release Notes
         id: notes
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           python3 scripts/generate-release-notes.py "$TAG" > release-notes.md
 
       - name: Create or Update GitHub Release

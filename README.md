@@ -113,13 +113,13 @@ The launcher no longer rewrites `~/.codex/config.toml`. If an older installation
 
 ## Automatic updates
 
-Every **Monday at 10:17 IST**, GitHub Actions checks OpenAI's stable amd64 APT feed. GitHub may start scheduled jobs late. Changes to the updater also start a check, and maintainers can use **Actions → Check & Update Upstream → Run workflow**.
+Every **Sunday at 09:07 IST**, GitHub Actions checks OpenAI's stable amd64 APT feed. GitHub may start scheduled jobs late. Changes to the updater also start a check, and maintainers can use **Actions → Check & Update Upstream → Run workflow**.
 
 The update process:
 
 1. Selects the highest Debian version for the exact package and architecture, validates its download layout, and records its SHA256. It rejects downgrades and conflicting metadata, and detects a changed archive hash for the same version.
 2. Evaluates and builds the candidate against the locked Nixpkgs revision. It runs updater tests, desktop-file/icon checks, formatting/workflow checks, an isolated headless version check, X11 window-class matching, and a headless Wayland window/identity check, plus the bundled Codex sandbox write-isolation check.
-3. On the first Monday of each month, also refreshes the official NixOS/Nixpkgs lock pin and validates that candidate with the same checks.
+3. On the first Sunday of each month, also refreshes the official NixOS/Nixpkgs lock pin and validates that candidate with the same checks.
 4. After every check succeeds, a separate fresh job reconstructs only the validated version/hash and restricted Nixpkgs lock changes and commits them to `main` as `github-actions[bot]`. Only this job has repository write permission.
 
 A failed candidate is not published. The failed Actions step and job summary explain the failure. Unchanged releases produce no package commit. Action dependencies are pinned to exact commits; Dependabot proposes weekly updates to those pins for security review.
