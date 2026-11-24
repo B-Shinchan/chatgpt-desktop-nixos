@@ -8,7 +8,7 @@ on:
       - scripts/**
       - tests/**
   schedule:
-    - cron: '30 */6 * * *' # Every 6 hours (00:30, 06:30, 12:30, 18:30 UTC)
+    - cron: '37 3 * * 0' # Sunday at 09:07 IST
   workflow_dispatch:
 
 concurrency:
@@ -49,10 +49,10 @@ jobs:
       - name: Test update selection
         run: python3 -m unittest discover -s tests -v
 
-      - name: Refresh official Nixpkgs pin on the first Monday of the month
+      - name: Refresh official Nixpkgs pin on the first Sunday of the month
         run: |
           set -euo pipefail
-          if [ "$(date -u +%u)" -eq 1 ] && (( 10#$(date -u +%d) <= 7 )); then
+          if [ "$(TZ=Asia/Kolkata date +%u)" -eq 7 ] && (( 10#$(TZ=Asia/Kolkata date +%d) <= 7 )); then
             nix flake update nixpkgs
           fi
 
