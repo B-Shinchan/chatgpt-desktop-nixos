@@ -43,9 +43,6 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Install headless desktop test tools
-        run: sudo apt-get update && sudo apt-get install -y xvfb xauth dbus-x11
-
       - name: Test update selection
         run: python3 -m unittest discover -s tests -v
 
@@ -74,22 +71,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Install headless desktop test tools
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
+        run: sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y xvfb xauth dbus-x11
+
       - name: Validate workflow and shell syntax
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck -c sh -c 'actionlint && shellcheck scripts/*.sh'
 
       - name: Check Nix formatting
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: nix fmt -- --check *.nix
 
       - name: Check flake, updater, and desktop integration
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: nix flake check --print-build-logs
 
       - name: Build package
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: nix build .#default --print-build-logs
 
       - name: Check packaged runtime
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: bash scripts/check-runtime.sh
 
       - name: Check X11 window identity
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: |
           mkdir -p .cache
           if nix shell --inputs-from . nixpkgs#python3 nixpkgs#xvfb-run nixpkgs#dbus nixpkgs#xprop nixpkgs#xwininfo -c xvfb-run -d dbus-run-session --config-file=tests/dbus-session.conf -- python3 scripts/check-x11.py > .cache/x11-ci.log 2>&1; then
@@ -101,6 +108,7 @@ jobs:
           fi
 
       - name: Check Wayland window identity
+        if: steps.check.outputs.has_update == 'true' || github.event_name != 'schedule'
         run: nix shell --inputs-from . nixpkgs#python3 nixpkgs#weston nixpkgs#dbus -c python3 scripts/check-wayland.py
 
       - name: Report validation failure
@@ -153,7 +161,7 @@ jobs:
             if ! git rev-parse "$TAG" >/dev/null 2>&1; then
               git tag -a "$TAG" -m "Release ChatGPT Desktop $TAG"
             fi
-            git push origin HEAD:main --tags
+            git push --atomic origin HEAD:main --tags
           else
             echo "VERSION_UPDATED=false" >> "$GITHUB_ENV"
             git commit -m "chore(flake): update nixpkgs lock pin"
